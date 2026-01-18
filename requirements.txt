@@ -1,0 +1,12 @@
+openai
+keyboard
+sounddevice
+numpy
+scipy
+pyperclip
+pyautogui
+python-dotenv
+pyaudio
+pyinstaller
+pystray
+Pillow
