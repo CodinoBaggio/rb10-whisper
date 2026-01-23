@@ -1,5 +1,5 @@
 import os
-from openai import OpenAI
+from openai import OpenAI, APITimeoutError
 from src.config import ConfigManager
 import re
 
@@ -8,13 +8,13 @@ class Transcriber:
         self.api_key = ConfigManager.load_api_key()
         self.client = None
         if self.api_key:
-            self.client = OpenAI(api_key=self.api_key)
+            self.client = OpenAI(api_key=self.api_key, timeout=30.0)
 
     def reload_key(self):
         """APIキーを再読み込みする"""
         self.api_key = ConfigManager.load_api_key()
         if self.api_key:
-            self.client = OpenAI(api_key=self.api_key)
+            self.client = OpenAI(api_key=self.api_key, timeout=30.0)
 
     def transcribe(self, audio_file_path: str) -> str:
         """

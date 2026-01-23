@@ -134,6 +134,7 @@ class AudioInputApp:
         
         self.is_recording = False
         self.processing = False
+        self.processing_start_time = 0
         self.last_toggle_time = 0
         self.tray_icon = None
         
@@ -197,7 +198,13 @@ class AudioInputApp:
             return
 
         if self.processing:
-            return # 処理中は無視
+            # スタック対策: 一定時間以上処理中の場合は強制リセット
+            if time.time() - self.processing_start_time > 35:
+                print("Warning: Processing state stuck. Force resetting.")
+                self.processing = False
+                self.overlay.hide()
+            else:
+                return # 処理中は無視
 
         if not self.is_recording:
             self.start_recording()
@@ -221,6 +228,7 @@ class AudioInputApp:
         print("Stop Recording...")
         self.is_recording = False
         self.processing = True
+        self.processing_start_time = time.time()
         
         # Thinking表示
         self.overlay.set_thinking()
