@@ -141,11 +141,54 @@ class AudioInputApp:
         # ホットキー設定
         # keyboardライブラリのコールバックは別スレッドで実行されるため、
         # Tkinterの操作をメインスレッドで行うように after でラップする
-        keyboard.add_hotkey('f2', lambda: self.root.after(0, self.toggle_recording))
-        keyboard.add_hotkey('esc', lambda: self.root.after(0, self.cancel_recording))
+        self.reload_hotkeys()
+        
+        self.last_watchdog_time = time.time()
+        self.last_hotkey_reload_time = time.time()
+        self._monitor_watchdog()
         
         self._check_api_key_on_startup()
         self._setup_tray_icon()
+
+    def reload_hotkeys(self):
+        """ホットキーを再登録する（フック消失対策）"""
+        try:
+            keyboard.unhook_all()
+            keyboard.add_hotkey('f2', lambda: self.root.after(0, self.toggle_recording))
+            keyboard.add_hotkey('esc', lambda: self.root.after(0, self.cancel_recording))
+            print("Hotkeys reloaded.")
+            self.last_hotkey_reload_time = time.time()
+        except Exception as e:
+            msg = f"Failed to reload hotkeys: {e}"
+            print(msg)
+            log_error(msg)
+
+    def _monitor_watchdog(self):
+        """
+        システムの生存確認とスリープ復帰検知を行うウォッチドッグ
+        """
+        try:
+            current_time = time.time()
+            # 1. スリープ復帰検知
+            # 予定より大きく時間が飛んでいたらスリープしていたとみなす
+            # 監視間隔(5s) + マージン(3s) = 8s
+            if current_time - self.last_watchdog_time > 8:
+                print("System resume detected. Reloading hotkeys...")
+                self.reload_hotkeys()
+            
+            # 2. 定期リフレッシュは廃止（ユーザー要望）
+            # ロック解除検知は時間差分だけでは難しいが、
+            # スリープを伴う運用であれば上記でカバーできる
+            # elif (current_time - self.last_hotkey_reload_time > 60) and (not self.is_recording):
+            #    print("Periodic hotkey refresh.")
+            #    self.reload_hotkeys()
+
+            self.last_watchdog_time = current_time
+        except Exception as e:
+            print(f"Watchdog Error: {e}")
+        
+        # 5秒後にまたチェック
+        self.root.after(5000, self._monitor_watchdog)
 
     def _setup_tray_icon(self):
         """システムトレイアイコンの設定"""
