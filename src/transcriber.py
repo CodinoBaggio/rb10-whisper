@@ -28,12 +28,12 @@ class Transcriber:
         try:
             with open(audio_file_path, "rb") as audio_file:
                 # Whisper API 呼び出し
-                # promptパラメータフィラー除去を指示
+                # promptを簡略化してAIによる過剰な推測（幻覚）を抑制
                 transcript = self.client.audio.transcriptions.create(
                     model="whisper-1",
                     file=audio_file,
                     language="ja",
-                    prompt="すべてのフィラー（えー、あー、うーん）を取り除き、自然な日本語の文章に整形してください。句読点を適切に補ってください。"
+                    prompt="こんにちは。" # 最小限のプロンプトで日本語であることを示す
                 )
             
             text = transcript.text
@@ -45,22 +45,33 @@ class Transcriber:
 
     def _post_process(self, text: str) -> str:
         """
-        文字起こし結果のクリーニングと加工
+        文字起こし結果のクリーニングと加工。幻覚の除去。
         """
+        # 0. 記号のみ、または極端に短い場合は空として扱う（点や丸だけの入力を防ぐ）
+        clean_text = re.sub(r'[。\.\,、 \? ！ ！ \n\t]', '', text)
+        if len(clean_text) <= 1:
+            return ""
+
         # 1. 幻覚（Hallucination）フィルター
+        # 行単位や全文で完全一致、あるいは含まれている場合に除去するフレーズ
         hallucination_phrases = [
             r"ご視聴ありがとうございました",
             r"チャンネル登録お願いします",
             r"高評価お願いします",
-            r"おかげさまで", # 文脈によるが、Whisper特有の幻覚でよく出る
+            r"おかげさまで",
             r"字幕作成",
             r"視聴してくれてありがとう",
+            r"Thank you for watching",
+            r"視聴ありがとうございました",
+            r"最後までご視聴",
+            r"おやすみなさい",
         ]
         
+        # 全体としてこれらのフレーズしか含まれていない場合は空にする
         for phrase in hallucination_phrases:
-            # フレーズが含まれていたら、その行ごと消すか、空文字列にする
-            # 完全に一致する場合や、文末に付くケースが多い。
-            # ここでは単純に文字列が含まれていたら除去する
+            if re.search(f"^{phrase}[。．？！]?$", text) or text == phrase:
+                return ""
+            # 部分一致での除去
             text = re.sub(phrase, "", text)
 
         # 2. 残存フィラー除去 (念のため)
@@ -71,4 +82,9 @@ class Transcriber:
         # 3. 整形
         text = text.strip()
         
+        # 最終チェック：加工後に記号だけになったり短くなりすぎたら空にする
+        final_clean = re.sub(r'[。\.\,、 \? ！ ！]', '', text)
+        if len(final_clean) == 0:
+            return ""
+            
         return text

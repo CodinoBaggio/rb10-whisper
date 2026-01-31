@@ -1,8 +1,10 @@
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import messagebox, ttk
 import webbrowser
 from src.config import ConfigManager
 import math
+import keyboard
+import threading
 
 class SettingsWindow:
     """APIキー設定ウィンドウ"""
@@ -11,14 +13,12 @@ class SettingsWindow:
         self.on_close_callback = on_close_callback
         
         self.window = tk.Toplevel(root)
-        self.window.title("API Key Setup")
-        self.window.geometry("720x220")
+        self.window.title("Settings")
+        self.window.geometry("720x400")
         self.window.resizable(True, True)
         self.window.attributes('-topmost', True)
         
         # モーダルウィンドウのように振る舞う
-        # rootがwithdrawされている状態でtransientにすると表示されないことがあるためコメントアウト
-        # self.window.transient(root)
         self.window.lift()
         self.window.focus_force()
         self.window.grab_set()
@@ -32,11 +32,27 @@ class SettingsWindow:
         # 色定義
         bg_color = "#202020"
         fg_color = "#ffffff"
-        accent_color = "#00ffcc"
         btn_bg = "#00aa88"
         btn_active = "#00ccaa"
+        save_btn_bg = "#444444"
         
         self.window.configure(bg=bg_color)
+        
+        # スタイル設定（Combobox用）
+        style = ttk.Style()
+        style.theme_use('default')
+        # readonly状態の時の背景色と文字色を強制指定
+        style.map('TCombobox', 
+                  fieldbackground=[('readonly', '#333333')],
+                  foreground=[('readonly', 'white')],
+                  background=[('readonly', '#444444')])
+        style.configure("TCombobox", fieldbackground="#333333", background="#444444", foreground="white", borderwidth=0)
+        
+        # プルダウン（リスト部分）の色設定
+        self.window.option_add("*TCombobox*Listbox.background", "#1a1a1a")
+        self.window.option_add("*TCombobox*Listbox.foreground", "white")
+        self.window.option_add("*TCombobox*Listbox.selectBackground", btn_bg)
+        self.window.option_add("*TCombobox*Listbox.selectForeground", "white")
         
         # 説明ラベル
         lbl_desc = tk.Label(self.window, text="OpenAI APIキーを入力してください。\n音声認識機能を使用するために必要です。", 
@@ -48,207 +64,315 @@ class SettingsWindow:
         link_lbl.pack(anchor='w')
         link_lbl.bind("<Button-1>", lambda e: webbrowser.open_new("https://platform.openai.com/account/api-keys"))
         
-        # 入力フィールドコンテナ
+        # APIキーコンテナ
         input_container = tk.Frame(self.window, padx=20, pady=10, bg=bg_color)
         input_container.pack(fill='x')
         
         tk.Label(input_container, text="API Key:", bg=bg_color, fg=fg_color).pack(anchor='w')
         
-        # 入力行フレーム（EntryとButtonを横並び）
+        # APIキー入力行
         row_frame = tk.Frame(input_container, bg=bg_color)
         row_frame.pack(fill='x', pady=5)
         
         self.api_key_var = tk.StringVar(value=ConfigManager.load_api_key())
+        self.api_key_visible = False
         
-        # Entry (左側、広がる)
         self.entry = tk.Entry(row_frame, textvariable=self.api_key_var, show="*", 
                              bg="#333333", fg="white", insertbackground="white", relief=tk.FLAT)
         self.entry.pack(side=tk.LEFT, fill='x', expand=True, ipady=5)
         
-        # 保存ボタン (右側、アイコン)
-        # Unicodeのチェックマークを使用
-        self.btn_save = tk.Button(row_frame, text="✔", command=self._save_and_close, 
-                                 bg=btn_bg, fg="white", activebackground=btn_active, activeforeground="white",
-                                 relief=tk.FLAT, width=4, font=("Helvetica", 12, "bold"), cursor="hand2")
-        self.btn_save.pack(side=tk.LEFT, padx=(10, 0)) # 左に少しマージン
-        
-        # ホバーエフェクト
-        def on_enter(e):
-            self.btn_save['bg'] = btn_active
-        def on_leave(e):
-            self.btn_save['bg'] = btn_bg
-            
-        self.btn_save.bind("<Enter>", on_enter)
-        self.btn_save.bind("<Leave>", on_leave)
+        self.btn_toggle_api = tk.Button(row_frame, text="👁", command=self._toggle_api_visibility,
+                                     bg="#444444", fg="white", activebackground="#555555",
+                                     relief=tk.FLAT, width=4, font=("Helvetica", 12), cursor="hand2")
+        self.btn_toggle_api.pack(side=tk.LEFT, padx=(10, 0))
 
-    def _save_and_close(self):
+        self.btn_save_key = tk.Button(row_frame, text="Save Key", command=self._save_api_key,
+                                    bg=btn_bg, fg="white", activebackground=btn_active,
+                                    relief=tk.FLAT, width=10, font=("Helvetica", 10, "bold"), cursor="hand2")
+        self.btn_save_key.pack(side=tk.LEFT, padx=(10, 0))
+
+        # ホットキー設定コンテナ
+        hotkey_container = tk.Frame(self.window, padx=20, pady=10, bg=bg_color)
+        hotkey_container.pack(fill='x')
+        
+        tk.Label(hotkey_container, text="Recording Hotkey:", bg=bg_color, fg=fg_color).pack(anchor='w')
+        
+        hotkey_row = tk.Frame(hotkey_container, bg=bg_color)
+        hotkey_row.pack(fill='x', pady=5)
+        
+        self.hotkey_var = tk.StringVar(value=ConfigManager.get_hotkey())
+        
+        hotkey_options = ["f2", "shift+f2", "ctrl+f2", "shift+space", "ctrl+space"]
+        self.hotkey_combo = ttk.Combobox(hotkey_row, textvariable=self.hotkey_var, values=hotkey_options, state="readonly")
+        self.hotkey_combo.pack(side=tk.LEFT, fill='x', expand=True, ipady=3)
+        
+        self.btn_apply_hotkey = tk.Button(hotkey_row, text="Apply Hotkey", command=self._apply_hotkey,
+                                        bg=btn_bg, fg="white", activebackground=btn_active,
+                                        relief=tk.FLAT, width=12, font=("Helvetica", 10, "bold"), cursor="hand2")
+        self.btn_apply_hotkey.pack(side=tk.LEFT, padx=(10, 0))
+        
+        lbl_hotkey_desc = tk.Label(hotkey_container, text="設定を変更したら「Apply Hotkey」を押してください", 
+                                  bg=bg_color, fg="#aaaaaa", font=("Helvetica", 9))
+        lbl_hotkey_desc.pack(anchor='w')
+
+        # 下部の閉じるボタンエリア
+        close_container = tk.Frame(self.window, padx=20, pady=20, bg=bg_color)
+        close_container.pack(side=tk.BOTTOM, fill='x')
+
+        self.btn_close = tk.Button(close_container, text="Close Settings", command=self._on_close_clicked,
+                                         bg="#444444", fg="white", activebackground="#555555",
+                                         relief=tk.FLAT, height=1, font=("Helvetica", 10), cursor="hand2")
+        self.btn_close.pack(side=tk.RIGHT)
+
+    def _toggle_api_visibility(self):
+        """APIキーの伏せ字表示を切り替え"""
+        if self.api_key_visible:
+            self.entry.config(show="*")
+            self.btn_toggle_api.config(text="👁")
+            self.api_key_visible = False
+        else:
+            self.entry.config(show="")
+            self.btn_toggle_api.config(text="🙈")
+            self.api_key_visible = True
+
+    def _set_cursor(self, cursor_type):
+        """カーソルを切り替える (例: 'watch', 'arrow', '')"""
+        self.window.config(cursor=cursor_type)
+        self.window.update_idletasks()
+
+    def _save_api_key(self):
+        """APIキーのみを保存"""
         key = self.api_key_var.get().strip()
         if not key:
-            messagebox.showerror("エラー", "APIキーが入力されていません。")
+            messagebox.showerror("Error", "API Key is empty.")
             return
+
+        self._set_cursor("watch")
         
-        ConfigManager.save_api_key(key)
+        def task():
+            try:
+                ConfigManager.save_api_key(key)
+                self.window.after(0, lambda: self._on_save_completed("API Key saved!"))
+                # メインスレッドでコールバック（キー再読み込み）を呼ぶ
+                if self.on_close_callback:
+                    self.window.after(0, lambda: self.on_close_callback(True))
+            except Exception as e:
+                self.window.after(0, lambda: messagebox.showerror("Error", f"Failed to save key: {e}"))
+            finally:
+                self.window.after(0, lambda: self._set_cursor(""))
+
+        threading.Thread(target=task, daemon=True).start()
+
+    def _apply_hotkey(self):
+        """ホットキーのみを適用"""
+        hotkey = self.hotkey_var.get().strip()
+        if not hotkey:
+            return
+
+        self._set_cursor("watch")
+        
+        def task():
+            try:
+                ConfigManager.set_hotkey(hotkey)
+                # メインスレッドでコールバック（ホットキー再読み込み）を呼ぶ
+                if self.on_close_callback:
+                    # saved=True で呼ぶが、ウィンドウは閉じないように main.py 側も調整が必要
+                    # あるいは直接新しい反映メソッドを設ける
+                    # ここでは既存の仕組み(on_close_callback)を利用しつつ、main.py 側で
+                    # 「保存のみ（ウィンドウ閉じない）」パターンを想定するか
+                    # とりあえず現状は保存だけして通知する
+                    self.window.after(0, lambda: self._on_save_completed(f"Hotkey [{hotkey.upper()}] applied!"))
+                    # reload_hotkeys を即座に呼ぶためにコールバック実行
+                    self.window.after(0, lambda: self.on_close_callback("hotkey_only"))
+            except Exception as e:
+                self.window.after(0, lambda: messagebox.showerror("Error", f"Failed to apply hotkey: {e}"))
+            finally:
+                self.window.after(0, lambda: self._set_cursor(""))
+
+        threading.Thread(target=task, daemon=True).start()
+
+    def _on_save_completed(self, message):
+        """保存完了時の通知"""
+        messagebox.showinfo("Success", message)
+
+    def _on_close_clicked(self):
+        """Closeボタンが押されたとき"""
         self.window.destroy()
-        if self.on_close_callback:
-            self.on_close_callback(True)
 
     def _on_close(self):
         if self.on_close_callback:
             self.on_close_callback(False)
         self.window.destroy()
 
-
 class OverlayWindow:
-    """録音中のビジュアライザーオーバーレイ"""
+    """録音中のモダンなビジュアライザーオーバーレイ"""
     def __init__(self, root):
         self.root = root
         self.window = tk.Toplevel(root)
         
         # ウィンドウ設定
-        self.window.overrideredirect(True)  # タイトルバーなし
-        self.window.attributes('-topmost', True)  # 最前面
-        self.window.attributes('-alpha', 0.85)  # 半透明
+        self.window.overrideredirect(True)
+        self.window.attributes('-topmost', True)
+        self.window.attributes('-alpha', 0.8) # 透過度
         
         # 画面中央下に配置
         screen_width = self.window.winfo_screenwidth()
         screen_height = self.window.winfo_screenheight()
-        width = 300
-        height = 100
+        width = 320
+        height = 80
         x = (screen_width - width) // 2
-        y = screen_height - height - 100
+        y = screen_height - height - 120
         self.window.geometry(f"{width}x{height}+{x}+{y}")
         
-        self.canvas = tk.Canvas(self.window, width=width, height=height, bg="black", highlightthickness=0)
+        # モダンな背景色
+        self.bg_color = "#1a1a1a"
+        self.canvas = tk.Canvas(self.window, width=width, height=height, bg=self.bg_color, highlightthickness=0)
         self.canvas.pack()
         
         self.bars = []
-        self.num_bars = 50  # バーの数をさらに増やす
-        self.bar_width = 4
-        self.bar_spacing = 2
+        self.num_bars = 100 # 多すぎず、かつ高密度なバランス
+        self.bar_width = 1   # 最小の細さ
+        self.bar_spacing = 2 # 間隔を広げて独立した「線」に見せる
         
-        # マウスイベント透過はTkinter単体では難しいが、今回は操作不要なのでそのまま
+        # 配色：録音中（ティールからパープル）
+        self.rec_colors = self._generate_gradient("#00f5d4", "#9b5de5", self.num_bars)
+        # 配色：思考中（赤からピンクへのグラデーション）
+        self.thinking_colors = self._generate_gradient("#ff0000", "#ff69b4", self.num_bars)
         
+        self.colors = self.rec_colors # 初期カラー
         self._init_bars(width, height)
-        self.window.withdraw() # 初期状態は非表示
+        self.window.withdraw()
         
         self.is_visible = False
         self.is_thinking = False
+        self.current_volume = 0.0
+
+    def _generate_gradient(self, start_hex, end_hex, steps):
+        """グラデーションカラーを生成"""
+        def hex_to_rgb(h):
+            h = h.lstrip('#')
+            return tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
+        
+        s_rgb = hex_to_rgb(start_hex)
+        e_rgb = hex_to_rgb(end_hex)
+        
+        gradient = []
+        for i in range(steps):
+            ratio = i / (steps - 1)
+            r = int(s_rgb[0] + (e_rgb[0] - s_rgb[0]) * ratio)
+            g = int(s_rgb[1] + (e_rgb[1] - s_rgb[1]) * ratio)
+            b = int(s_rgb[2] + (e_rgb[2] - s_rgb[2]) * ratio)
+            gradient.append(f'#{r:02x}{g:02x}{b:02x}')
+        return gradient
 
     def _init_bars(self, width, height):
         self.canvas_height = height
         total_width = (self.bar_width * self.num_bars) + (self.bar_spacing * (self.num_bars - 1))
         start_x = (width - total_width) / 2
         
+        center_y = height / 2
         for i in range(self.num_bars):
-            x0 = start_x + i * (self.bar_width + self.bar_spacing)
-            x1 = x0 + self.bar_width
-            y1 = height
-            y0 = height - 2
-            bar = self.canvas.create_rectangle(x0, y0, x1, y1, fill="#ffffff", outline="")
+            x = start_x + (i * (self.bar_width + self.bar_spacing)) + (self.bar_width / 2)
+            # 描画負荷が低い create_line で角丸を表現
+            bar = self.canvas.create_line(x, center_y - 2, x, center_y + 2, 
+                                        fill=self.colors[i], width=self.bar_width, capstyle='round')
             self.bars.append(bar)
 
     def show(self):
+        self.is_thinking = False
+        self.current_volume = 0.0
+        
+        # 表示前に色を録音中用(rec_colors)にリセット
+        for i, bar in enumerate(self.bars):
+            self.canvas.itemconfig(bar, fill=self.rec_colors[i])
+        
+        # 描画を強制的に反映させてからウィンドウを表示する
+        self.canvas.update_idletasks()
+        
         self.window.deiconify()
         self.is_visible = True
-        self.is_thinking = False
-        for bar in self.bars:
-            self.canvas.itemconfigure(bar, state="normal")
+        self._draw_frame() # 描画ループ開始
 
     def hide(self):
-        self.window.withdraw()
-        self.is_visible = False
         self.is_thinking = False
+        self.is_visible = False
+        
+        # 隠す前に色を録音中用(rec_colors)にリセットしておく（次回表示時のフラッシング防止）
+        for i, bar in enumerate(self.bars):
+            self.canvas.itemconfig(bar, fill=self.rec_colors[i])
+        self.canvas.update_idletasks()
+        
+        self.window.withdraw()
 
     def update_volume(self, volume):
-        """
-        音量(0.0 - 1.0)に応じてバーの高さを更新
-        波形アニメーション
-        """
-        # Thinking中は音量更新を無視（アニメーションが上書きするため）
+        """音量に合わせてバーを更新"""
         if not self.is_visible or self.is_thinking:
             return
-
-        import math
-        import random
-        import time
         
-        # 時間経過で少しゆらぎを入れるためのオフセット
-        t = time.time() * 10
-        
-        for i, bar in enumerate(self.bars):
-            # 0.0 - 1.0 の正規化位置
-            norm_pos = i / (self.num_bars - 1)
-            
-            # 中央(0.5)からの距離 (0.0 - 0.5)
-            dist = abs(norm_pos - 0.5) 
-            
-            # ガウス関数っぽい形状を作る (中央が高く、端が低い)
-            sigma = 0.15
-            envelope = math.exp(-(dist**2) / (2 * sigma**2))
-            
-            # 音量を反映
-            # 感度アップ: 小さな声でも反応しやすくするために 2.0倍くらいにブーストしつつ、最小値を少し底上げ
-            boosted_volume = volume * 2.0
-            amplitude = self.canvas_height * boosted_volume * 0.8           
-            # ゆらぎ
-            wave = (math.sin(norm_pos * 10 + t) * 0.2 + 1.0)
-            
-            h = amplitude * envelope * wave
-            h = max(2, min(self.canvas_height, h))
-            
-            coords = self.canvas.coords(bar)
-            x0, _, x1, _ = coords
-            
-            # 中央揃え（上下対称風）
-            center_y = self.canvas_height / 2
-            half_h = h / 2
-            
-            self.canvas.coords(bar, x0, center_y - half_h, x1, center_y + half_h)
-            self.canvas.itemconfig(bar, fill="#ffffff")
+        # なめらかな追従
+        alpha = 0.3 # 前回の値をどれだけ残すか
+        self.current_volume = self.current_volume * alpha + volume * (1 - alpha)
 
-    def set_thinking(self):
-        """Thinking状態の表示（ブレスアニメーション）"""
-        self.is_thinking = True
-        self._animate_breath()
-
-    def _animate_breath(self):
-        if not self.is_thinking or not self.is_visible:
+    def _draw_frame(self):
+        """アニメーションのメインループ (60fps目標)"""
+        if not self.is_visible:
             return
 
-        import math
         import time
-
         t = time.time()
+        center_y = self.canvas_height / 2
         
-        # ブレス周期 (2秒くらいで一周)
-        cycle = (math.sin(t * 3) + 1.0) / 2.0 # 0.0 - 1.0
-        
-        # 最小の明るさ(高さ)と最大の明るさ(高さ)
-        # 高で表現する: 全体がふわっと大きくなって小さくなる
-        
+        # 心拍リズムの計算 (ドクッ、ドクッ...)
+        pulse = 0.0
+        if self.is_thinking:
+            # 二峰性拍動 (systole: 大, diastole: 小)
+            # 周期を約1.2秒に設定
+            cycle_t = (t * 0.8) % 1.0
+            # 第1波（ドクッ）
+            pulse1 = math.exp(-((cycle_t - 0.2)**2) / (2 * 0.05**2)) * 1.0
+            # 第2波（ドクッ）
+            pulse2 = math.exp(-((cycle_t - 0.45)**2) / (2 * 0.04**2)) * 0.4
+            pulse = pulse1 + pulse2
+
         for i, bar in enumerate(self.bars):
-            # 形状は緩やかな山
             norm_pos = i / (self.num_bars - 1)
             dist = abs(norm_pos - 0.5)
-            sigma = 0.2
-            shape = math.exp(-(dist**2) / (2 * sigma**2))
+            envelope = math.exp(-(dist**2) / (2 * 0.18**2)) # 広がりを微調整
             
-            # cycleに合わせて高さを変える
-            # ベースの高さ + 呼吸分
-            base_amp = 10
-            breath_amp = 20 * cycle
+            if self.is_thinking:
+                # 思考中：心音アニメーション（ベース高を録音待機時と同じ 3px に合わせる）
+                delay = dist * 0.4
+                p = (t * 0.8 - delay) % 1.0
+                p1 = math.exp(-((p - 0.2)**2) / (2 * 0.05**2)) * 1.0
+                p2 = math.exp(-((p - 0.45)**2) / (2 * 0.04**2)) * 0.4
+                local_pulse = (p1 + p2) * envelope
+                
+                # ベース高 3 + 拍動分 40
+                h = 3 + 40 * local_pulse
+                h = max(3, h)
+                
+                if local_pulse > 0.4: 
+                    self.canvas.itemconfig(bar, fill="#ffb6c1") # ライトピンクで発光感を出す (白を廃止)
+                else:
+                    self.canvas.itemconfig(bar, fill=self.thinking_colors[i])
+            else:
+                # 録音中：音量反応
+                anim_t = t * 6
+                wave = (math.sin(norm_pos * 14 + anim_t) * 0.2 + 
+                       math.sin(norm_pos * 9 - anim_t * 0.5) * 0.1 + 0.7)
+                # ベース高 3
+                h = 3 + (self.canvas_height * self.current_volume * 1.6) * envelope * wave
+                h = max(3, min(self.canvas_height - 6, h))
+                self.canvas.itemconfig(bar, fill=self.rec_colors[i])
             
-            h = (base_amp + breath_amp) * shape
-            h = max(2, h)
-            
-            coords = self.canvas.coords(bar)
-            x0, _, x1, _ = coords
-            
-            center_y = self.canvas_height / 2
+            # 座標更新
+            x, _, _, _ = self.canvas.coords(bar)
             half_h = h / 2
-            
-            self.canvas.coords(bar, x0, center_y - half_h, x1, center_y + half_h)
-            self.canvas.itemconfig(bar, fill="#ffffff")  # 色は変えない（明滅ではなくサイズ変化で表現）
-            
-        # 30ms後に再実行 (約33fps)
-        self.window.after(30, self._animate_breath)
+            self.canvas.coords(bar, x, center_y - half_h, x, center_y + half_h)
+
+        # 16ms間隔で更新 (約60fps)
+        self.root.after(16, self._draw_frame)
+
+    def set_thinking(self):
+        self.is_thinking = True
+        # _draw_frame は show() からループし続けているのでフラグ切り替えのみでOK
