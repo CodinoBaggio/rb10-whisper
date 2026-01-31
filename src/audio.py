@@ -14,6 +14,7 @@ class AudioRecorder:
         self.frames = []
         self.stream = None
         self.volume_callback = None # (volume: float) -> None
+        self.max_volume = 0.0 # 録音中の最大音量を追跡
 
     def start(self, volume_callback=None):
         """録音を開始する"""
@@ -22,6 +23,7 @@ class AudioRecorder:
         
         self.recording = True
         self.frames = []
+        self.max_volume = 0.0 # リセット
         self.volume_callback = volume_callback
         
         # ストリームの開始
@@ -65,11 +67,15 @@ class AudioRecorder:
             self.frames.append(indata.copy())
             
             # 音量計算 (RMS)
-            rms = np.sqrt(np.mean(indata**2))
+            rms = float(np.sqrt(np.mean(indata**2)))
+            
+            # 最大音量を更新
+            if rms > self.max_volume:
+                self.max_volume = rms
             
             # 正規化 (適当な係数で0.0-1.0に近づける。入力レベルによるが調整必要)
             # ここではクリッピングも考慮して簡易的に
-            volume = float(rms) * 10
+            volume = rms * 5
             volume = min(1.0, volume)
             
             if self.volume_callback:

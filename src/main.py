@@ -153,10 +153,15 @@ class AudioInputApp:
     def reload_hotkeys(self):
         """ホットキーを再登録する（フック消失対策）"""
         try:
+            # 既存の全フックを解除
             keyboard.unhook_all()
-            keyboard.add_hotkey('f2', lambda: self.root.after(0, self.toggle_recording))
+            # 解除が確実にOS側に反映されるよう、最小限の待機（0.01s）
+            time.sleep(0.01)
+            
+            hotkey = ConfigManager.get_hotkey()
+            keyboard.add_hotkey(hotkey, lambda: self.root.after(0, self.toggle_recording))
             keyboard.add_hotkey('esc', lambda: self.root.after(0, self.cancel_recording))
-            print("Hotkeys reloaded.")
+            print(f"Hotkeys reloaded. Active hotkey: [{hotkey.upper()}]")
             self.last_hotkey_reload_time = time.time()
         except Exception as e:
             msg = f"Failed to reload hotkeys: {e}"
@@ -214,17 +219,25 @@ class AudioInputApp:
             print("API Key not found. Opening settings...")
             self._open_settings()
         else:
-            print("Ready to record (Press F2)")
+            hotkey = ConfigManager.get_hotkey()
+            print(f"Ready to record (Press {hotkey.upper()})")
 
     def _open_settings(self):
         """設定画面を開く"""
-        # すでに開いていたらフォーカスする等の制御があると良いが、ここでは単純に開く
+        # リスト選択式への変更に伴い、設定中のホットキー停止は不要（むしろ混乱の元）なため削除
+            
         def on_close(saved):
-            if saved:
+            if saved == "hotkey_only":
+                self.reload_hotkeys()
+                print("Hotkey config updated via settings.")
+            elif saved is True:
                 self.transcriber.reload_key()
-                print("API Key saved. Ready.")
+                self.reload_hotkeys()
+                print("All settings reloaded.")
             else:
-                print("Setup cancelled.")
+                # ウィンドウを閉じた際などは念のため最新状態で初期化
+                self.reload_hotkeys()
+                print("Settings window closed.")
                 
         SettingsWindow(self.root, on_close_callback=on_close)
 
@@ -279,6 +292,17 @@ class AudioInputApp:
         # 録音停止・ファイル保存
         audio_path = self.recorder.stop()
         
+        # 音量チェック (閾値以下の場合はスキップ)
+        # RMS 0.01 はノイズをより確実に弾く設定
+        if self.recorder.max_volume < 0.01:
+            print(f"Skipping transcription (Input too quiet: {self.recorder.max_volume:.5f})")
+            if audio_path and os.path.exists(audio_path):
+                try: os.remove(audio_path)
+                except: pass
+            self.processing = False
+            self.root.after(0, self.overlay.hide)
+            return
+
         # 別スレッドで文字起こし実行（UIをフリーズさせないため）
         threading.Thread(target=self._transcribe_thread, args=(audio_path,)).start()
 
