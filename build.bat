@@ -11,7 +11,7 @@ rem Build with PyInstaller
 rem --onefile: Single executable
 rem --noconfirm: Overwrite existing directory
 rem --name: Output file name
-pyinstaller --onefile --noconfirm --noconsole --name "rb10-whisper" launcher.py
+pyinstaller --onefile --noconfirm --noconsole --paths . --name "rb10-whisper" launcher.py
 
 echo.
 echo Build complete. Executable is in dist\rb10-whisper.exe
