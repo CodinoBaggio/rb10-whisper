@@ -1,5 +1,5 @@
 openai
-keyboard
+global-hotkeys
 sounddevice
 numpy
 scipy
