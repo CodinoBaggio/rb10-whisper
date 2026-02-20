@@ -6,7 +6,7 @@ scipy
 pyperclip
 pyautogui
 python-dotenv
-pyaudio
 pyinstaller
 pystray
 Pillow
+keyring

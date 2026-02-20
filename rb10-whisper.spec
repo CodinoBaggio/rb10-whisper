@@ -1,12 +1,16 @@
 # -*- mode: python ; coding: utf-8 -*-
+from PyInstaller.utils.hooks import copy_metadata
+
+datas = []
+datas += copy_metadata('keyring')
 
 
 a = Analysis(
     ['launcher.py'],
     pathex=['.'],
     binaries=[],
-    datas=[],
-    hiddenimports=[],
+    datas=datas,
+    hiddenimports=['keyring', 'keyring.backends.Windows'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
