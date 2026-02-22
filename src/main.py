@@ -1,6 +1,6 @@
 import tkinter as tk
 import threading
-from global_hotkeys import register_hotkeys, start_checking_hotkeys, stop_checking_hotkeys, clear_hotkeys
+import keyboard
 import pyperclip
 import pyautogui
 import os
@@ -139,8 +139,14 @@ class AudioInputApp:
         self.tray_icon = None
         
         # ホットキー設定
-        # global_hotkeysライブラリを使用（keyboardより安定）
-        self._hotkeys_running = False
+        # keyboardライブラリを使用し、修飾キーの干渉を防ぐ独自ロジックを実装
+        self._hotkey_name = ""
+        self._key_held = False
+        self._is_toggled = False
+        self._last_press_time = 0
+        self._other_key_pressed_during_hold = False
+        self._hold_timer = None
+        
         self.reload_hotkeys()
         
         self.last_watchdog_time = time.time()
@@ -149,29 +155,87 @@ class AudioInputApp:
         self._check_api_key_on_startup()
         self._setup_tray_icon()
 
+    def _on_key_event(self, event):
+        """全てのキーイベントを監視し、対象ホットキーとの相互作用を管理する"""
+        if not self._hotkey_name:
+            return
+
+        # ESCキーでのキャンセル
+        if event.name == "esc" and event.event_type == keyboard.KEY_DOWN:
+            self.root.after(0, self.cancel_recording)
+            return
+
+        is_target_key = (event.name.lower() == self._hotkey_name)
+
+        if event.event_type == keyboard.KEY_DOWN:
+            if not is_target_key:
+                # 対象外のキーが押された場合、修飾キーとしての利用（ショートカット等）とみなす
+                if self._key_held:
+                    self._other_key_pressed_during_hold = True
+            else:
+                # 対象ホットキーが押下された
+                if not self._key_held:
+                    self._key_held = True
+                    self._other_key_pressed_during_hold = False
+                    
+                    # ホールド判定タイマー開始（0.3秒経過後、他のキーが押されていなければ録音開始）
+                    if self._hold_timer:
+                        self.root.after_cancel(self._hold_timer)
+                    self._hold_timer = self.root.after(300, self._check_hold_start)
+
+        elif event.event_type == keyboard.KEY_UP:
+            if is_target_key:
+                self._key_held = False
+                
+                # ホールド録音中だがトグル状態でないなら終了
+                if self.is_recording and not self._is_toggled:
+                    self.root.after(0, self.stop_and_transcribe)
+
+                # 他のキーが割り込んでいなかった場合のみタップとみなす
+                if not self._other_key_pressed_during_hold:
+                    current_time = time.time()
+                    # 前回のタップから0.4秒以内で、かつ録音中でなければダブルタップと判定
+                    if current_time - self._last_press_time < 0.4:
+                        self.root.after(0, self._handle_double_tap)
+                        self._last_press_time = 0 # リセット
+                    else:
+                        self._last_press_time = current_time
+
+    def _check_hold_start(self):
+        """ホールド（長押し）による録音開始を判定"""
+        # まだ押されており、かつ他のキーが割り込んでいない場合のみ
+        if self._key_held and not self._other_key_pressed_during_hold:
+            if not self.is_recording and not self.processing:
+                # トグル状態でない純粋なホールド開始
+                self._is_toggled = False
+                self.start_recording()
+
+    def _handle_double_tap(self):
+        """ダブルタップ時のトグル切り替え"""
+        if self._is_toggled:
+            # トグル解除
+            self._is_toggled = False
+            if self.is_recording:
+                self.stop_and_transcribe()
+        else:
+            # トグルによる録音開始
+            if not self.is_recording and not self.processing:
+                if not ConfigManager.has_valid_key():
+                    self._open_settings()
+                    return
+                self._is_toggled = True
+                self.start_recording()
+
     def reload_hotkeys(self):
         """ホットキーを再登録する"""
         try:
-            # 既存のホットキーを停止
-            if self._hotkeys_running:
-                stop_checking_hotkeys()
-                clear_hotkeys()
-                self._hotkeys_running = False
+            keyboard.unhook_all()
+            self._hotkey_name = ConfigManager.get_hotkey().lower()
             
-            hotkey = ConfigManager.get_hotkey()
+            # fnキーは通常取得できないが、指定されたままフックする
+            keyboard.hook(self._on_key_event)
             
-            # global_hotkeysのバインディング形式
-            # [ホットキー, on_press_callback, on_release_callback, actuate_on_partial_release]
-            bindings = [
-                [hotkey, None, lambda: self.root.after(0, self.toggle_recording), False],
-                ["escape", None, lambda: self.root.after(0, self.cancel_recording), False],
-            ]
-            
-            register_hotkeys(bindings)
-            start_checking_hotkeys()
-            self._hotkeys_running = True
-            
-            print(f"Hotkeys registered. Active hotkey: [{hotkey.upper()}]")
+            print(f"Hotkeys registered. Active hotkey: [{self._hotkey_name.upper()}]")
         except Exception as e:
             msg = f"Failed to register hotkeys: {e}"
             print(msg)
@@ -180,14 +244,10 @@ class AudioInputApp:
     def _monitor_watchdog(self):
         """
         システムの生存確認とスリープ復帰検知を行うウォッチドッグ
-        global_hotkeysライブラリはkeyboardより安定しているため、
-        定期リフレッシュは不要。スリープ復帰時のみ再登録。
+        スリープ復帰時にkeyboardのフックが外れることがあるため再登録を促す。
         """
         try:
             current_time = time.time()
-            # スリープ復帰検知
-            # 予定より大きく時間が飛んでいたらスリープしていたとみなす
-            # 監視間隔(5s) + マージン(3s) = 8s
             if current_time - self.last_watchdog_time > 8:
                 print("System resume detected. Reloading hotkeys...")
                 self.reload_hotkeys()
@@ -381,11 +441,10 @@ class AudioInputApp:
             self.recorder.stop()
         
         # ホットキー監視停止
-        if self._hotkeys_running:
-            try:
-                stop_checking_hotkeys()
-            except:
-                pass
+        try:
+            keyboard.unhook_all()
+        except:
+            pass
         
         # トレイアイコン停止
         if self.tray_icon:

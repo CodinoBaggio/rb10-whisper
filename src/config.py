@@ -49,7 +49,7 @@ class ConfigManager:
             return cls._config_cache
 
         path = cls._get_config_path()
-        defaults = {"hotkey": "f2"}
+        defaults = {"hotkey": "shift"}
         if not path.exists():
             cls._config_cache = defaults
             return defaults
@@ -83,7 +83,7 @@ class ConfigManager:
     def get_hotkey(cls) -> str:
         """設定からホットキーを取得"""
         config = cls.load_config()
-        return config.get("hotkey", "f2")
+        return config.get("hotkey", "shift")
 
     @classmethod
     def set_hotkey(cls, hotkey: str) -> None:
