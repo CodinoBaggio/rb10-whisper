@@ -14,7 +14,7 @@ class SettingsWindow:
         
         self.window = tk.Toplevel(root)
         self.window.title("Settings")
-        self.window.geometry("720x400")
+        self.window.geometry("800x500")
         self.window.resizable(True, True)
         self.window.attributes('-topmost', True)
         
@@ -102,7 +102,7 @@ class SettingsWindow:
         
         self.hotkey_var = tk.StringVar(value=ConfigManager.get_hotkey())
         
-        hotkey_options = ["f2", "shift+f2", "ctrl+f2", "shift+space", "ctrl+space"]
+        hotkey_options = ["fn", "alt", "ctrl", "shift"]
         self.hotkey_combo = ttk.Combobox(hotkey_row, textvariable=self.hotkey_var, values=hotkey_options, state="readonly")
         self.hotkey_combo.pack(side=tk.LEFT, fill='x', expand=True, ipady=3)
         
@@ -111,8 +111,8 @@ class SettingsWindow:
                                         relief=tk.FLAT, width=12, font=("Helvetica", 10, "bold"), cursor="hand2")
         self.btn_apply_hotkey.pack(side=tk.LEFT, padx=(10, 0))
         
-        lbl_hotkey_desc = tk.Label(hotkey_container, text="設定を変更したら「Apply Hotkey」を押してください", 
-                                  bg=bg_color, fg="#aaaaaa", font=("Helvetica", 9))
+        lbl_hotkey_desc = tk.Label(hotkey_container, text="設定を変更したら「Apply Hotkey」を押してください\n※FnキーはWindowsの仕様上、機能しない場合があります。", 
+                                  bg=bg_color, fg="#aaaaaa", font=("Helvetica", 9), justify=tk.LEFT)
         lbl_hotkey_desc.pack(anchor='w')
 
         # 下部の閉じるボタンエリア
@@ -137,8 +137,9 @@ class SettingsWindow:
 
     def _set_cursor(self, cursor_type):
         """カーソルを切り替える (例: 'watch', 'arrow', '')"""
-        self.window.config(cursor=cursor_type)
-        self.window.update_idletasks()
+        if hasattr(self, 'window') and self.window.winfo_exists():
+            self.window.config(cursor=cursor_type)
+            self.window.update_idletasks()
 
     def _save_api_key(self):
         """APIキーのみを保存"""
@@ -194,6 +195,7 @@ class SettingsWindow:
     def _on_save_completed(self, message):
         """保存完了時の通知"""
         messagebox.showinfo("Success", message)
+        self.window.destroy()
 
     def _on_close_clicked(self):
         """Closeボタンが押されたとき"""
