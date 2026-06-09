@@ -152,7 +152,7 @@ class AudioInputApp:
         self.last_watchdog_time = time.time()
         self._monitor_watchdog()
         
-        self._check_api_key_on_startup()
+        self._check_connection_on_startup()
         self._setup_tray_icon()
 
     def _on_key_event(self, event):
@@ -220,9 +220,6 @@ class AudioInputApp:
         else:
             # トグルによる録音開始
             if not self.is_recording and not self.processing:
-                if not ConfigManager.has_valid_key():
-                    self._open_settings()
-                    return
                 self._is_toggled = True
                 self.start_recording()
 
@@ -276,12 +273,18 @@ class AudioInputApp:
         # トレイスレッドからTkinterスレッドへ依頼
         self.root.after(0, self._on_exit)
 
-    def _check_api_key_on_startup(self):
-        """起動時にAPIキーを確認"""
-        print("Initializing application...")
-        if not ConfigManager.has_valid_key():
-            print("API Key not found. Opening settings...")
-            self._open_settings()
+    def _check_connection_on_startup(self):
+        """起動時に speaches への接続を確認"""
+        print("Checking connection to speaches...")
+        if not self.transcriber.check_connection():
+            print("Warning: speaches is not running.")
+            import tkinter.messagebox
+            tkinter.messagebox.showwarning(
+                "接続エラー",
+                "speaches サーバーに接続できません。\n"
+                "Docker で whisper-server を起動してください。\n\n"
+                "アプリは起動しますが、文字起こしは動作しません。"
+            )
         else:
             hotkey = ConfigManager.get_hotkey()
             print(f"Ready to record (Press {hotkey.upper()})")
@@ -295,11 +298,9 @@ class AudioInputApp:
                 self.reload_hotkeys()
                 print("Hotkey config updated via settings.")
             elif saved is True:
-                self.transcriber.reload_key()
                 self.reload_hotkeys()
-                print("All settings reloaded.")
+                print("Settings saved.")
             else:
-                # ウィンドウを閉じた際などは念のため最新状態で初期化
                 self.reload_hotkeys()
                 print("Settings window closed.")
                 
@@ -312,10 +313,6 @@ class AudioInputApp:
              # デバウンス: 0.5秒以内の連打は無視
             return
         self.last_toggle_time = current_time
-
-        if not ConfigManager.has_valid_key():
-            self._open_settings()
-            return
 
         if self.processing:
             # スタック対策: 一定時間以上処理中の場合は強制リセット
