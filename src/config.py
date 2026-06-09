@@ -49,7 +49,7 @@ class ConfigManager:
             return cls._config_cache
 
         path = cls._get_config_path()
-        defaults = {"hotkey": "shift"}
+        defaults = {"hotkey": "shift", "whisper_url": "http://localhost:8000/v1"}
         if not path.exists():
             cls._config_cache = defaults
             return defaults
@@ -91,3 +91,9 @@ class ConfigManager:
         config = cls.load_config()
         config["hotkey"] = hotkey
         cls.save_config(config)
+
+    @classmethod
+    def get_whisper_url(cls) -> str:
+        """文字起こしバックエンドの URL を取得"""
+        config = cls.load_config()
+        return config.get("whisper_url", "http://localhost:8000/v1")
