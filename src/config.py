@@ -49,7 +49,7 @@ class ConfigManager:
             return cls._config_cache
 
         path = cls._get_config_path()
-        defaults = {"hotkey": "shift", "whisper_url": "http://localhost:8000/v1"}
+        defaults = {"hotkey": "shift", "whisper_url": "http://localhost:8000/v1", "whisper_model": "Systran/faster-whisper-large-v3"}
         if not path.exists():
             cls._config_cache = defaults
             return defaults
@@ -97,3 +97,9 @@ class ConfigManager:
         """文字起こしバックエンドの URL を取得"""
         config = cls.load_config()
         return config.get("whisper_url", "http://localhost:8000/v1")
+
+    @classmethod
+    def get_whisper_model(cls) -> str:
+        """使用する Whisper モデル名を取得"""
+        config = cls.load_config()
+        return config.get("whisper_model", "Systran/faster-whisper-large-v3")

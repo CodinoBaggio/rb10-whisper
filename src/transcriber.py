@@ -21,7 +21,7 @@ class Transcriber:
         try:
             with open(audio_file_path, "rb") as audio_file:
                 transcript = self.client.audio.transcriptions.create(
-                    model="Systran/faster-whisper-large-v3",
+                    model=ConfigManager.get_whisper_model(),
                     file=audio_file,
                     language="ja",
                     prompt="こんにちは。"
