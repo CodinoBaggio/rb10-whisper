@@ -5,6 +5,9 @@ import tempfile
 import threading
 import queue
 import os
+import re
+
+from src.config import ConfigManager
 
 class AudioRecorder:
     def __init__(self, sample_rate=16000, channels=1):
@@ -20,18 +23,20 @@ class AudioRecorder:
         """録音を開始する"""
         if self.recording:
             return
-        
+
+        device_index = self._resolve_device()
+
         self.recording = True
         self.frames = []
-        self.max_volume = 0.0 # リセット
+        self.max_volume = 0.0
         self.volume_callback = volume_callback
-        
-        # ストリームの開始
+
         self.stream = sd.InputStream(
             samplerate=self.sample_rate,
             channels=self.channels,
             callback=self._audio_callback,
-            blocksize=1024
+            blocksize=1024,
+            device=device_index
         )
         self.stream.start()
 
@@ -80,3 +85,36 @@ class AudioRecorder:
             
             if self.volume_callback:
                 self.volume_callback(volume)
+
+    @staticmethod
+    def find_device_index(name: str) -> int | None:
+        """デバイス名からインデックスを解決する。
+        完全一致優先。見つからない場合は USB ポート番号を正規化して再比較する。
+        例: "(Blue Yeti)" と "(2- Blue Yeti)" は同一デバイスと判定する。
+        入力チャンネルなし（出力専用）デバイスは除外する。
+        """
+        all_devices = sd.query_devices()
+
+        for i, d in enumerate(all_devices):
+            if d['max_input_channels'] > 0 and d['name'] == name:
+                return i
+
+        def normalize(s: str) -> str:
+            return re.sub(r'\(\d+- ', '(', s).lower()
+
+        name_norm = normalize(name)
+        for i, d in enumerate(all_devices):
+            if d['max_input_channels'] > 0 and normalize(d['name']) == name_norm:
+                return i
+
+        return None
+
+    def _resolve_device(self) -> int | None:
+        """設定からマイクデバイスを解決してインデックスを返す（None = システムデフォルト）"""
+        name = ConfigManager.get_mic_device()
+        if name is None:
+            return None
+        idx = AudioRecorder.find_device_index(name)
+        if idx is None:
+            print(f"[AudioRecorder] mic '{name}' not found, using default")
+        return idx
