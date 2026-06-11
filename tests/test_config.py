@@ -17,3 +17,33 @@ def test_get_whisper_url_returns_custom():
     with patch.object(ConfigManager, 'load_config', return_value={"whisper_url": "http://192.168.1.10:8000/v1"}):
         url = ConfigManager.get_whisper_url()
     assert url == "http://192.168.1.10:8000/v1"
+
+
+def test_get_mic_device_returns_none_by_default():
+    ConfigManager._config_cache = None
+    with patch.object(ConfigManager, 'load_config', return_value={}):
+        device = ConfigManager.get_mic_device()
+    assert device is None
+
+
+def test_get_mic_device_returns_saved_name():
+    ConfigManager._config_cache = None
+    with patch.object(ConfigManager, 'load_config', return_value={"mic_device": "Microphone (Blue Yeti)"}):
+        device = ConfigManager.get_mic_device()
+    assert device == "Microphone (Blue Yeti)"
+
+
+def test_set_mic_device_saves_name(tmp_path, monkeypatch):
+    ConfigManager._config_cache = None
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    ConfigManager.set_mic_device("Microphone (Blue Yeti)")
+    ConfigManager._config_cache = None
+    assert ConfigManager.get_mic_device() == "Microphone (Blue Yeti)"
+
+
+def test_set_mic_device_saves_none(tmp_path, monkeypatch):
+    ConfigManager._config_cache = None
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    ConfigManager.set_mic_device(None)
+    ConfigManager._config_cache = None
+    assert ConfigManager.get_mic_device() is None
