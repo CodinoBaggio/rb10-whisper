@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import messagebox, ttk
 import webbrowser
+import sounddevice as sd
 from src.config import ConfigManager
 import math
 import keyboard
@@ -111,9 +112,48 @@ class SettingsWindow:
                                         relief=tk.FLAT, width=12, font=("Helvetica", 10, "bold"), cursor="hand2")
         self.btn_apply_hotkey.pack(side=tk.LEFT, padx=(10, 0))
         
-        lbl_hotkey_desc = tk.Label(hotkey_container, text="設定を変更したら「Apply Hotkey」を押してください\n※FnキーはWindowsの仕様上、機能しない場合があります。", 
+        lbl_hotkey_desc = tk.Label(hotkey_container, text="設定を変更したら「Apply Hotkey」を押してください\n※FnキーはWindowsの仕様上、機能しない場合があります。",
                                   bg=bg_color, fg="#aaaaaa", font=("Helvetica", 9), justify=tk.LEFT)
         lbl_hotkey_desc.pack(anchor='w')
+
+        # マイク選択コンテナ
+        mic_container = tk.Frame(self.window, padx=20, pady=10, bg=bg_color)
+        mic_container.pack(fill='x')
+
+        tk.Label(mic_container, text="Microphone:", bg=bg_color, fg=fg_color).pack(anchor='w')
+
+        mic_row = tk.Frame(mic_container, bg=bg_color)
+        mic_row.pack(fill='x', pady=5)
+
+        system_default = "System Default"
+        try:
+            all_devices = sd.query_devices()
+            input_device_names = [
+                d['name'] for d in all_devices if d['max_input_channels'] > 0
+            ]
+        except Exception:
+            input_device_names = []
+        mic_options = [system_default] + input_device_names
+
+        current_mic = ConfigManager.get_mic_device()
+        initial_mic = current_mic if current_mic in input_device_names else system_default
+        self.mic_var = tk.StringVar(value=initial_mic)
+
+        self.mic_combo = ttk.Combobox(mic_row, textvariable=self.mic_var,
+                                      values=mic_options, state="readonly")
+        self.mic_combo.pack(side=tk.LEFT, fill='x', expand=True, ipady=3)
+
+        self.btn_apply_mic = tk.Button(mic_row, text="Apply Mic", command=self._apply_mic,
+                                       bg=btn_bg, fg="white", activebackground=btn_active,
+                                       relief=tk.FLAT, width=12,
+                                       font=("Helvetica", 10, "bold"), cursor="hand2")
+        self.btn_apply_mic.pack(side=tk.LEFT, padx=(10, 0))
+
+        lbl_mic_desc = tk.Label(mic_container,
+                                text="設定を変更したら「Apply Mic」を押してください",
+                                bg=bg_color, fg="#aaaaaa", font=("Helvetica", 9),
+                                justify=tk.LEFT)
+        lbl_mic_desc.pack(anchor='w')
 
         # 下部の閉じるボタンエリア
         close_container = tk.Frame(self.window, padx=20, pady=20, bg=bg_color)
@@ -187,6 +227,27 @@ class SettingsWindow:
                     self.window.after(0, lambda: self.on_close_callback("hotkey_only"))
             except Exception as e:
                 self.window.after(0, lambda: messagebox.showerror("Error", f"Failed to apply hotkey: {e}"))
+            finally:
+                self.window.after(0, lambda: self._set_cursor(""))
+
+        threading.Thread(target=task, daemon=True).start()
+
+    def _apply_mic(self):
+        """マイク設定を適用"""
+        selected = self.mic_var.get().strip()
+        if not selected:
+            return
+
+        self._set_cursor("watch")
+
+        def task():
+            try:
+                name_to_save = None if selected == "System Default" else selected
+                ConfigManager.set_mic_device(name_to_save)
+                label = "System Default" if name_to_save is None else selected
+                self.window.after(0, lambda: self._on_save_completed(f"Mic [{label}] applied!"))
+            except Exception as e:
+                self.window.after(0, lambda: messagebox.showerror("Error", f"Failed to apply mic: {e}"))
             finally:
                 self.window.after(0, lambda: self._set_cursor(""))
 
