@@ -151,8 +151,9 @@ class AudioInputApp:
         
         self.last_watchdog_time = time.time()
         self._monitor_watchdog()
-        
+
         self._check_connection_on_startup()
+        self._check_mic_on_startup()
         self._setup_tray_icon()
 
     def _on_key_event(self, event):
@@ -288,6 +289,19 @@ class AudioInputApp:
         else:
             hotkey = ConfigManager.get_hotkey()
             print(f"Ready to record (Press {hotkey.upper()})")
+
+    def _check_mic_on_startup(self):
+        """起動時に設定されたマイクが存在するか確認"""
+        name = ConfigManager.get_mic_device()
+        if name is None:
+            return
+        if self.recorder.find_device_index(name) is None:
+            import tkinter.messagebox
+            tkinter.messagebox.showwarning(
+                "マイクが見つかりません",
+                f"設定されたマイク「{name}」が見つかりません。\n"
+                "システムデフォルトを使用します。"
+            )
 
     def _open_settings(self):
         """設定画面を開く"""
