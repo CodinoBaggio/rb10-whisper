@@ -349,14 +349,16 @@ class SettingsWindow:
 
     def _start_model_fetch(self, url: str) -> None:
         """バックグラウンドでモデル一覧を取得する"""
+        self._fetch_serial = getattr(self, '_fetch_serial', 0) + 1
+        serial = self._fetch_serial
         self._prefetch_model_value = self.model_var.get()
         self.model_var.set("Fetching...")
         self.model_widget.config(state="disabled")
         threading.Thread(
-            target=self._fetch_models_async, args=(url,), daemon=True
+            target=self._fetch_models_async, args=(url, serial), daemon=True
         ).start()
 
-    def _fetch_models_async(self, url: str) -> None:
+    def _fetch_models_async(self, url: str, serial: int) -> None:
         """バックグラウンドスレッドで /v1/models を取得し、結果をメインスレッドへ渡す"""
         import urllib.request
         import json as _json
@@ -365,16 +367,19 @@ class SettingsWindow:
             with urllib.request.urlopen(models_url, timeout=5) as resp:
                 data = _json.loads(resp.read().decode())
             models = [item["id"] for item in data.get("data", [])]
-            if models:
+            if models and serial == self._fetch_serial:
                 self.window.after(0, lambda: self._switch_to_model_combo(models))
                 return
         except Exception:
             pass
-        restore = getattr(self, '_prefetch_model_value', ConfigManager.get_whisper_model())
-        self.window.after(0, lambda: self._switch_to_model_entry(restore))
+        if serial == self._fetch_serial:
+            restore = getattr(self, '_prefetch_model_value', ConfigManager.get_whisper_model())
+            self.window.after(0, lambda: self._switch_to_model_entry(restore))
 
     def _switch_to_model_combo(self, models: list) -> None:
         """モデルウィジェットを Combobox（選択式）に切り替える"""
+        if not self.window.winfo_exists():
+            return
         current = self.model_var.get()
         initial = current if current in models else models[0]
         self.model_widget.destroy()
@@ -387,6 +392,8 @@ class SettingsWindow:
 
     def _switch_to_model_entry(self, restore_value: str | None = None) -> None:
         """モデルウィジェットを Entry（手入力）に切り替える"""
+        if not self.window.winfo_exists():
+            return
         current = self.model_var.get()
         value = restore_value if restore_value is not None else (
             ConfigManager.get_whisper_model() if current == "Fetching..." else current
