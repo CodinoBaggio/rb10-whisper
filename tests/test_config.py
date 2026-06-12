@@ -47,3 +47,19 @@ def test_set_mic_device_saves_none(tmp_path, monkeypatch):
     ConfigManager.set_mic_device(None)
     ConfigManager._config_cache = None
     assert ConfigManager.get_mic_device() is None
+
+
+def test_set_whisper_url_saves_value(tmp_path, monkeypatch):
+    ConfigManager._config_cache = None
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    ConfigManager.set_whisper_url("http://192.168.1.100:8001/v1")
+    ConfigManager._config_cache = None
+    assert ConfigManager.get_whisper_url() == "http://192.168.1.100:8001/v1"
+
+
+def test_set_whisper_model_saves_value(tmp_path, monkeypatch):
+    ConfigManager._config_cache = None
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    ConfigManager.set_whisper_model("openai/whisper-large-v3")
+    ConfigManager._config_cache = None
+    assert ConfigManager.get_whisper_model() == "openai/whisper-large-v3"

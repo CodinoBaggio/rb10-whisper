@@ -110,6 +110,20 @@ class ConfigManager:
         return config.get("whisper_model", "Systran/faster-whisper-large-v3")
 
     @classmethod
+    def set_whisper_url(cls, url: str) -> None:
+        """文字起こしバックエンドの URL を設定に保存"""
+        config = cls.load_config()
+        config["whisper_url"] = url
+        cls.save_config(config)
+
+    @classmethod
+    def set_whisper_model(cls, model: str) -> None:
+        """使用する Whisper モデル名を設定に保存"""
+        config = cls.load_config()
+        config["whisper_model"] = model
+        cls.save_config(config)
+
+    @classmethod
     def get_mic_device(cls) -> str | None:
         """録音に使用するマイクのデバイス名を取得（None = システムデフォルト）"""
         config = cls.load_config()
