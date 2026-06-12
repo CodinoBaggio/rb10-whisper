@@ -133,6 +133,7 @@ class SettingsWindow:
                                   bg="#333333", fg="white",
                                   insertbackground="white", relief=tk.FLAT)
         self.url_entry.pack(side=tk.LEFT, fill='x', expand=True, ipady=5)
+        self.url_entry.bind("<FocusOut>", self._on_url_blur)
 
         # モデル入力行
         tk.Label(backend_container, text="Model:",
@@ -211,6 +212,11 @@ class SettingsWindow:
                                          bg="#444444", fg="white", activebackground="#555555",
                                          relief=tk.FLAT, height=1, font=("Helvetica", 10), cursor="hand2")
         self.btn_close.pack(side=tk.RIGHT)
+
+        # 起動時に URL が localhost なら即フェッチ
+        initial_url = ConfigManager.get_whisper_url()
+        if self._is_localhost_url(initial_url):
+            self.window.after(200, lambda: self._start_model_fetch(initial_url))
 
     def _toggle_api_visibility(self):
         """APIキーの伏せ字表示を切り替え"""
@@ -301,6 +307,14 @@ class SettingsWindow:
 
         threading.Thread(target=task, daemon=True).start()
 
+    def _on_url_blur(self, event) -> None:
+        """URL 欄からフォーカスが外れたときにモデルウィジェットを切り替える"""
+        url = self.url_var.get().strip()
+        if self._is_localhost_url(url):
+            self._start_model_fetch(url)
+        else:
+            self._switch_to_model_entry()
+
     def _apply_backend(self):
         """バックエンド URL とモデルを保存"""
         url = self.url_var.get().strip()
@@ -329,6 +343,65 @@ class SettingsWindow:
                 self.window.after(0, lambda: self._set_cursor(""))
 
         threading.Thread(target=task, daemon=True).start()
+
+    def _is_localhost_url(self, url: str) -> bool:
+        return "localhost" in url or "127.0.0.1" in url
+
+    def _start_model_fetch(self, url: str) -> None:
+        """バックグラウンドでモデル一覧を取得する"""
+        self._prefetch_model_value = self.model_var.get()
+        self.model_var.set("Fetching...")
+        self.model_widget.config(state="disabled")
+        threading.Thread(
+            target=self._fetch_models_async, args=(url,), daemon=True
+        ).start()
+
+    def _fetch_models_async(self, url: str) -> None:
+        """バックグラウンドスレッドで /v1/models を取得し、結果をメインスレッドへ渡す"""
+        import urllib.request
+        import json as _json
+        models_url = url.rstrip("/") + "/models"
+        try:
+            with urllib.request.urlopen(models_url, timeout=5) as resp:
+                data = _json.loads(resp.read().decode())
+            models = [item["id"] for item in data.get("data", [])]
+            if models:
+                self.window.after(0, lambda: self._switch_to_model_combo(models))
+                return
+        except Exception:
+            pass
+        restore = getattr(self, '_prefetch_model_value', ConfigManager.get_whisper_model())
+        self.window.after(0, lambda: self._switch_to_model_entry(restore))
+
+    def _switch_to_model_combo(self, models: list) -> None:
+        """モデルウィジェットを Combobox（選択式）に切り替える"""
+        current = self.model_var.get()
+        initial = current if current in models else models[0]
+        self.model_widget.destroy()
+        self.model_var.set(initial)
+        self.model_widget = ttk.Combobox(
+            self.model_row, textvariable=self.model_var,
+            values=models, state="readonly"
+        )
+        self.model_widget.pack(side=tk.LEFT, fill='x', expand=True, ipady=3)
+
+    def _switch_to_model_entry(self, restore_value: str | None = None) -> None:
+        """モデルウィジェットを Entry（手入力）に切り替える"""
+        current = self.model_var.get()
+        value = restore_value if restore_value is not None else (
+            ConfigManager.get_whisper_model() if current == "Fetching..." else current
+        )
+        if isinstance(self.model_widget, ttk.Combobox):
+            self.model_widget.destroy()
+            self.model_widget = tk.Entry(
+                self.model_row, textvariable=self.model_var,
+                bg="#333333", fg="white",
+                insertbackground="white", relief=tk.FLAT
+            )
+            self.model_widget.pack(side=tk.LEFT, fill='x', expand=True, ipady=5)
+        else:
+            self.model_widget.config(state="normal")
+        self.model_var.set(value)
 
     def _on_save_completed(self, message):
         """保存完了時の通知"""
