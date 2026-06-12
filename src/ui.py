@@ -15,7 +15,7 @@ class SettingsWindow:
         
         self.window = tk.Toplevel(root)
         self.window.title("Settings")
-        self.window.geometry("800x500")
+        self.window.geometry("800x700")
         self.window.resizable(True, True)
         self.window.attributes('-topmost', True)
         
@@ -115,6 +115,54 @@ class SettingsWindow:
         lbl_hotkey_desc = tk.Label(hotkey_container, text="設定を変更したら「Apply Hotkey」を押してください\n※FnキーはWindowsの仕様上、機能しない場合があります。",
                                   bg=bg_color, fg="#aaaaaa", font=("Helvetica", 9), justify=tk.LEFT)
         lbl_hotkey_desc.pack(anchor='w')
+
+        # バックエンド設定コンテナ
+        backend_container = tk.Frame(self.window, padx=20, pady=10, bg=bg_color)
+        backend_container.pack(fill='x')
+
+        tk.Label(backend_container, text="Backend:", bg=bg_color, fg=fg_color).pack(anchor='w')
+
+        # URL 入力行
+        tk.Label(backend_container, text="Whisper URL:",
+                 bg=bg_color, fg=fg_color, font=("Helvetica", 9)).pack(anchor='w')
+        url_row = tk.Frame(backend_container, bg=bg_color)
+        url_row.pack(fill='x', pady=(2, 5))
+
+        self.url_var = tk.StringVar(value=ConfigManager.get_whisper_url())
+        self.url_entry = tk.Entry(url_row, textvariable=self.url_var,
+                                  bg="#333333", fg="white",
+                                  insertbackground="white", relief=tk.FLAT)
+        self.url_entry.pack(side=tk.LEFT, fill='x', expand=True, ipady=5)
+
+        # モデル入力行
+        tk.Label(backend_container, text="Model:",
+                 bg=bg_color, fg=fg_color, font=("Helvetica", 9)).pack(anchor='w')
+        self.model_row = tk.Frame(backend_container, bg=bg_color)
+        self.model_row.pack(fill='x', pady=(2, 5))
+
+        self.model_var = tk.StringVar(value=ConfigManager.get_whisper_model())
+        self.model_widget = tk.Entry(self.model_row, textvariable=self.model_var,
+                                     bg="#333333", fg="white",
+                                     insertbackground="white", relief=tk.FLAT)
+        self.model_widget.pack(side=tk.LEFT, fill='x', expand=True, ipady=5)
+
+        # Apply ボタン行
+        apply_backend_row = tk.Frame(backend_container, bg=bg_color)
+        apply_backend_row.pack(fill='x', pady=(0, 5))
+
+        self.btn_apply_backend = tk.Button(
+            apply_backend_row, text="Apply Backend",
+            command=self._apply_backend,
+            bg=btn_bg, fg="white", activebackground=btn_active,
+            relief=tk.FLAT, width=14,
+            font=("Helvetica", 10, "bold"), cursor="hand2"
+        )
+        self.btn_apply_backend.pack(side=tk.RIGHT)
+
+        tk.Label(backend_container,
+                 text="設定を変更したら「Apply Backend」を押してください",
+                 bg=bg_color, fg="#aaaaaa", font=("Helvetica", 9),
+                 justify=tk.LEFT).pack(anchor='w')
 
         # マイク選択コンテナ
         mic_container = tk.Frame(self.window, padx=20, pady=10, bg=bg_color)
@@ -248,6 +296,35 @@ class SettingsWindow:
                 self.window.after(0, lambda: self._on_save_completed(f"Mic [{label}] applied!"))
             except Exception as e:
                 self.window.after(0, lambda: messagebox.showerror("Error", f"Failed to apply mic: {e}"))
+            finally:
+                self.window.after(0, lambda: self._set_cursor(""))
+
+        threading.Thread(target=task, daemon=True).start()
+
+    def _apply_backend(self):
+        """バックエンド URL とモデルを保存"""
+        url = self.url_var.get().strip()
+        if not url:
+            messagebox.showerror("Error", "Whisper URL is empty.")
+            return
+        if not url.startswith("http"):
+            messagebox.showerror("Error", "Whisper URL must start with 'http'.")
+            return
+
+        model = self.model_var.get().strip()
+        if not model or model == "Fetching...":
+            messagebox.showerror("Error", "Model is empty or still loading.")
+            return
+
+        self._set_cursor("watch")
+
+        def task():
+            try:
+                ConfigManager.set_whisper_url(url)
+                ConfigManager.set_whisper_model(model)
+                self.window.after(0, lambda: self._on_save_completed(f"Backend [{url}] applied!"))
+            except Exception as e:
+                self.window.after(0, lambda: messagebox.showerror("Error", f"Failed to apply backend: {e}"))
             finally:
                 self.window.after(0, lambda: self._set_cursor(""))
 
