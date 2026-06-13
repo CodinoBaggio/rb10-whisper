@@ -139,13 +139,15 @@ class AudioInputApp:
         self.tray_icon = None
         
         # ホットキー設定
-        # keyboardライブラリを使用し、修飾キーの干渉を防ぐ独自ロジックを実装
-        self._hotkey_name = ""
-        self._key_held = False
-        self._is_toggled = False
-        self._last_press_time = 0
+        self._modifier_hold   = ""
+        self._trigger_hold    = ""
+        self._modifier_toggle = ""
+        self._trigger_toggle  = ""
+        self._capturing       = False
+        self._key_held        = False
+        self._is_toggled      = False
         self._other_key_pressed_during_hold = False
-        self._hold_timer = None
+        self._hold_timer      = None
         
         self.reload_hotkeys()
         
@@ -157,50 +159,38 @@ class AudioInputApp:
         self._setup_tray_icon()
 
     def _on_key_event(self, event):
-        """全てのキーイベントを監視し、対象ホットキーとの相互作用を管理する"""
-        if not self._hotkey_name:
+        """全てのキーイベントを監視し、Hold/Toggle コンボを検出する"""
+        if self._capturing:
             return
 
-        # ESCキーでのキャンセル
-        if event.name == "esc" and event.event_type == keyboard.KEY_DOWN:
+        name = event.name.lower()
+
+        # ESC キャンセル
+        if name == "esc" and event.event_type == keyboard.KEY_DOWN:
             self.root.after(0, self.cancel_recording)
             return
 
-        is_target_key = (event.name.lower() == self._hotkey_name)
+        is_hold_key   = (name == self._trigger_hold)   and keyboard.is_pressed(self._modifier_hold)
+        is_toggle_key = (name == self._trigger_toggle) and keyboard.is_pressed(self._modifier_toggle)
 
         if event.event_type == keyboard.KEY_DOWN:
-            if not is_target_key:
-                # 対象外のキーが押された場合、修飾キーとしての利用（ショートカット等）とみなす
-                if self._key_held:
-                    self._other_key_pressed_during_hold = True
-            else:
-                # 対象ホットキーが押下された
+            if is_hold_key:
                 if not self._key_held:
                     self._key_held = True
                     self._other_key_pressed_during_hold = False
-                    
-                    # ホールド判定タイマー開始（0.3秒経過後、他のキーが押されていなければ録音開始）
                     if self._hold_timer:
                         self.root.after_cancel(self._hold_timer)
                     self._hold_timer = self.root.after(300, self._check_hold_start)
+            elif is_toggle_key:
+                self.root.after(0, self._handle_toggle)
+            elif self._key_held and name != self._modifier_hold:
+                self._other_key_pressed_during_hold = True
 
         elif event.event_type == keyboard.KEY_UP:
-            if is_target_key:
+            if name == self._trigger_hold and self._key_held:
                 self._key_held = False
-                
-                # ホールド録音中だがトグル状態でないなら終了
                 if self.is_recording and not self._is_toggled:
                     self.root.after(0, self.stop_and_transcribe)
-
-                # 他のキーが割り込んでいなかった場合のみタップとみなす
-                if not self._other_key_pressed_during_hold:
-                    current_time = time.time()
-                    # 前回のタップから0.4秒以内で、かつ録音中でなければダブルタップと判定
-                    if current_time - self._last_press_time < 0.4:
-                        self.root.after(0, self._handle_double_tap)
-                        self._last_press_time = 0 # リセット
-                    else:
-                        self._last_press_time = current_time
 
     def _check_hold_start(self):
         """ホールド（長押し）による録音開始を判定"""
@@ -211,29 +201,42 @@ class AudioInputApp:
                 self._is_toggled = False
                 self.start_recording()
 
-    def _handle_double_tap(self):
-        """ダブルタップ時のトグル切り替え"""
-        if self._is_toggled:
-            # トグル解除
+    def _handle_toggle(self):
+        """Toggle キー押下時: 録音中なら停止、停止中なら開始"""
+        if self.is_recording:
             self._is_toggled = False
-            if self.is_recording:
-                self.stop_and_transcribe()
-        else:
-            # トグルによる録音開始
-            if not self.is_recording and not self.processing:
-                self._is_toggled = True
-                self.start_recording()
+            self.stop_and_transcribe()
+        elif not self.processing:
+            self._is_toggled = True
+            self.start_recording()
+
+    def _set_capturing(self, flag: bool) -> None:
+        """キーキャプチャ中フラグを設定する（Settings UI から呼ばれる）"""
+        self._capturing = flag
 
     def reload_hotkeys(self):
         """ホットキーを再登録する"""
         try:
             keyboard.unhook_all()
-            self._hotkey_name = ConfigManager.get_hotkey().lower()
-            
-            # fnキーは通常取得できないが、指定されたままフックする
+            hold_str   = ConfigManager.get_hotkey()
+            toggle_str = ConfigManager.get_hotkey_toggle()
+
+            mod_h, trg_h = ConfigManager.parse_hotkey(hold_str)
+            mod_t, trg_t = ConfigManager.parse_hotkey(toggle_str)
+
+            # 旧フォーマット（+ なし）のフォールバック
+            if not trg_h:
+                mod_h, trg_h = "alt", "x"
+            if not trg_t:
+                mod_t, trg_t = "alt", "z"
+
+            self._modifier_hold   = mod_h
+            self._trigger_hold    = trg_h
+            self._modifier_toggle = mod_t
+            self._trigger_toggle  = trg_t
+
             keyboard.hook(self._on_key_event)
-            
-            print(f"Hotkeys registered. Active hotkey: [{self._hotkey_name.upper()}]")
+            print(f"Hotkeys registered. Hold: [{mod_h.upper()}+{trg_h.upper()}], Toggle: [{mod_t.upper()}+{trg_t.upper()}]")
         except Exception as e:
             msg = f"Failed to register hotkeys: {e}"
             print(msg)
@@ -275,20 +278,69 @@ class AudioInputApp:
         self.root.after(0, self._on_exit)
 
     def _check_connection_on_startup(self):
-        """起動時に speaches への接続を確認"""
-        print("Checking connection to speaches...")
-        if not self.transcriber.check_connection():
-            print("Warning: speaches is not running.")
-            import tkinter.messagebox
-            tkinter.messagebox.showwarning(
-                "接続エラー",
-                "speaches サーバーに接続できません。\n"
-                "Docker で whisper-server を起動してください。\n\n"
-                "アプリは起動しますが、文字起こしは動作しません。"
-            )
-        else:
+        """起動時に speaches への接続をバックグラウンドで確認・Docker 自動起動"""
+        threading.Thread(target=self._check_connection_thread, daemon=True).start()
+
+    def _check_connection_thread(self):
+        """バックグラウンド: speaches 接続確認 → 必要なら Docker コンテナ起動 → 再確認"""
+        import subprocess
+
+        container = ConfigManager.get_docker_container().strip()
+
+        if self.transcriber.check_connection():
             hotkey = ConfigManager.get_hotkey()
             print(f"Ready to record (Press {hotkey.upper()})")
+            return
+
+        print("Warning: speaches is not running.")
+
+        if container and self._is_docker_running():
+            print(f"Attempting to start Docker container: {container}")
+            self._try_docker_start_container(container)
+
+            for _ in range(15):
+                time.sleep(1)
+                if self.transcriber.check_connection():
+                    hotkey = ConfigManager.get_hotkey()
+                    print(f"Container started. Ready to record (Press {hotkey.upper()})")
+                    return
+
+            print("Container started but speaches did not respond in time.")
+
+        self.root.after(0, self._show_connection_warning)
+
+    def _show_connection_warning(self):
+        """接続失敗時の警告ダイアログ（メインスレッドで呼ぶ）"""
+        import tkinter.messagebox
+        tkinter.messagebox.showwarning(
+            "接続エラー",
+            "speaches サーバーに接続できません。\n"
+            "Docker で whisper-server を起動してください。\n\n"
+            "アプリは起動しますが、文字起こしは動作しません。"
+        )
+
+    def _is_docker_running(self) -> bool:
+        """Docker Desktop（デーモン）が起動しているか確認"""
+        import subprocess
+        try:
+            result = subprocess.run(
+                ["docker", "info"],
+                capture_output=True, timeout=5
+            )
+            return result.returncode == 0
+        except Exception:
+            return False
+
+    def _try_docker_start_container(self, name: str) -> None:
+        """指定コンテナを起動する（既に動いている場合は無視）"""
+        import subprocess
+        try:
+            subprocess.run(
+                ["docker", "start", name],
+                capture_output=True, timeout=15
+            )
+        except Exception as e:
+            print(f"Docker start failed: {e}")
 
     def _check_mic_on_startup(self):
         """起動時に設定されたマイクが存在するか確認"""
@@ -318,7 +370,7 @@ class AudioInputApp:
                 self.reload_hotkeys()
                 print("Settings window closed.")
                 
-        SettingsWindow(self.root, on_close_callback=on_close)
+        SettingsWindow(self.root, on_close_callback=on_close, suspend_callback=self._set_capturing)
 
     def toggle_recording(self):
         """録音の開始/停止トグル"""

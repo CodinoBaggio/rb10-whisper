@@ -4,14 +4,25 @@ from src.config import ConfigManager
 import re
 
 class Transcriber:
-    def __init__(self):
-        whisper_url = ConfigManager.get_whisper_url()
-        self.client = OpenAI(api_key="dummy", base_url=whisper_url, timeout=30.0)
+    def _make_client(self) -> tuple:
+        """現在の config に基づいて (OpenAI client, model) を返す"""
+        if ConfigManager.get_backend_type() == "openai":
+            api_key = ConfigManager.load_api_key() or "dummy"
+            base_url = ConfigManager.get_openai_url() or None
+            return OpenAI(api_key=api_key, base_url=base_url, timeout=30.0), "whisper-1"
+        else:
+            return (
+                OpenAI(api_key="dummy", base_url=ConfigManager.get_whisper_url(), timeout=30.0),
+                ConfigManager.get_whisper_model(),
+            )
 
     def check_connection(self) -> bool:
-        """speaches サーバーへの接続確認。成功なら True、失敗なら False を返す。"""
+        """バックエンドへの接続確認。OpenAI モードは常に True を返す。"""
+        if ConfigManager.get_backend_type() == "openai":
+            return True
         try:
-            self.client.models.list()
+            client, _ = self._make_client()
+            client.models.list()
             return True
         except Exception:
             return False
@@ -19,9 +30,10 @@ class Transcriber:
     def transcribe(self, audio_file_path: str) -> str:
         """音声ファイルをテキストに変換する"""
         try:
+            client, model = self._make_client()
             with open(audio_file_path, "rb") as audio_file:
-                transcript = self.client.audio.transcriptions.create(
-                    model=ConfigManager.get_whisper_model(),
+                transcript = client.audio.transcriptions.create(
+                    model=model,
                     file=audio_file,
                     language="ja",
                     prompt="こんにちは。"

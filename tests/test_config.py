@@ -63,3 +63,36 @@ def test_set_whisper_model_saves_value(tmp_path, monkeypatch):
     ConfigManager.set_whisper_model("openai/whisper-large-v3")
     ConfigManager._config_cache = None
     assert ConfigManager.get_whisper_model() == "openai/whisper-large-v3"
+
+
+def test_parse_hotkey_returns_modifier_and_key():
+    modifier, key = ConfigManager.parse_hotkey("ctrl+x")
+    assert modifier == "ctrl"
+    assert key == "x"
+
+
+def test_parse_hotkey_handles_multichar_key():
+    modifier, key = ConfigManager.parse_hotkey("alt+space")
+    assert modifier == "alt"
+    assert key == "space"
+
+
+def test_parse_hotkey_returns_empty_for_old_format():
+    modifier, key = ConfigManager.parse_hotkey("alt")
+    assert modifier == ""
+    assert key == ""
+
+
+def test_get_hotkey_toggle_returns_default():
+    ConfigManager._config_cache = None
+    with patch.object(ConfigManager, 'load_config', return_value={}):
+        toggle = ConfigManager.get_hotkey_toggle()
+    assert toggle == "alt+z"
+
+
+def test_set_hotkey_toggle_saves_value(tmp_path, monkeypatch):
+    ConfigManager._config_cache = None
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    ConfigManager.set_hotkey_toggle("ctrl+q")
+    ConfigManager._config_cache = None
+    assert ConfigManager.get_hotkey_toggle() == "ctrl+q"
