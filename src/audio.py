@@ -1,6 +1,8 @@
 import sounddevice as sd
 import numpy as np
 import scipy.io.wavfile as wav
+import scipy.signal
+import math
 import tempfile
 import threading
 import queue
@@ -16,8 +18,10 @@ class AudioRecorder:
         self.recording = False
         self.frames = []
         self.stream = None
-        self.volume_callback = None # (volume: float) -> None
-        self.max_volume = 0.0 # 録音中の最大音量を追跡
+        self.volume_callback = None
+        self.max_volume = 0.0
+        self._native_rate = sample_rate
+        self._native_channels = channels
 
     def start(self, volume_callback=None):
         """録音を開始する"""
@@ -26,14 +30,23 @@ class AudioRecorder:
 
         device_index = self._resolve_device()
 
+        # デバイス指定時はネイティブレート・チャンネルで開く（WASAPI 互換性のため）
+        if device_index is not None:
+            info = sd.query_devices(device_index)
+            self._native_rate = int(info['default_samplerate'])
+            self._native_channels = min(2, int(info['max_input_channels']))
+        else:
+            self._native_rate = self.sample_rate
+            self._native_channels = self.channels
+
         self.recording = True
         self.frames = []
         self.max_volume = 0.0
         self.volume_callback = volume_callback
 
         self.stream = sd.InputStream(
-            samplerate=self.sample_rate,
-            channels=self.channels,
+            samplerate=self._native_rate,
+            channels=self._native_channels,
             callback=self._audio_callback,
             blocksize=1024,
             device=device_index
@@ -41,25 +54,34 @@ class AudioRecorder:
         self.stream.start()
 
     def stop(self) -> str:
-        """
-        録音を停止し、WAVファイルを保存してパスを返す
-        """
+        """録音を停止し、16000Hz モノラル WAV を保存してパスを返す"""
         if not self.recording:
             return None
-            
+
         self.recording = False
         if self.stream:
             self.stream.stop()
             self.stream.close()
             self.stream = None
-            
-        # 録音データを結合
+
         if not self.frames:
             return None
-            
-        recording_data = np.concatenate(self.frames, axis=0)
-        
-        # 一時ファイルに保存
+
+        recording_data = np.concatenate(self.frames, axis=0)  # (samples, channels)
+
+        # ステレオ → モノラル
+        if self._native_channels > 1:
+            recording_data = recording_data.mean(axis=1)
+        else:
+            recording_data = recording_data.flatten()
+
+        # サンプルレート変換（WASAPI ネイティブ → 16000Hz）
+        if self._native_rate != self.sample_rate:
+            gcd = math.gcd(self.sample_rate, self._native_rate)
+            up = self.sample_rate // gcd
+            down = self._native_rate // gcd
+            recording_data = scipy.signal.resample_poly(recording_data, up, down).astype(np.float32)
+
         temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
         wav.write(temp_file.name, self.sample_rate, recording_data)
         return temp_file.name
