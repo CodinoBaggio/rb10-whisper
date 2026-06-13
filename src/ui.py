@@ -256,7 +256,17 @@ class SettingsWindow:
         system_default = "System Default"
         try:
             all_devices = sd.query_devices()
-            input_device_names = [d['name'] for d in all_devices if d['max_input_channels'] > 0]
+            wasapi_idx = next(
+                (i for i, h in enumerate(sd.query_hostapis()) if 'WASAPI' in h['name']),
+                None
+            )
+            if wasapi_idx is not None:
+                input_device_names = [
+                    d['name'] for d in all_devices
+                    if d['max_input_channels'] > 0 and d['hostapi'] == wasapi_idx
+                ]
+            else:
+                input_device_names = [d['name'] for d in all_devices if d['max_input_channels'] > 0]
         except Exception:
             input_device_names = []
         mic_options = [system_default] + input_device_names

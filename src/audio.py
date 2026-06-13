@@ -88,21 +88,39 @@ class AudioRecorder:
 
     @staticmethod
     def find_device_index(name: str) -> int | None:
-        """デバイス名からインデックスを解決する。
-        完全一致優先。見つからない場合は USB ポート番号を正規化して再比較する。
-        例: "(Blue Yeti)" と "(2- Blue Yeti)" は同一デバイスと判定する。
-        入力チャンネルなし（出力専用）デバイスは除外する。
+        """デバイス名から WASAPI デバイスのインデックスを優先して解決する。
+        WASAPI に見つからない場合は他の API にフォールバックする。
+        USB ポート番号の違いは正規化して同一視する。
         """
         all_devices = sd.query_devices()
-
-        for i, d in enumerate(all_devices):
-            if d['max_input_channels'] > 0 and d['name'] == name:
-                return i
+        wasapi_idx = next(
+            (i for i, h in enumerate(sd.query_hostapis()) if 'WASAPI' in h['name']),
+            None
+        )
 
         def normalize(s: str) -> str:
             return re.sub(r'\(\d+- ', '(', s).lower()
 
         name_norm = normalize(name)
+
+        # 1. WASAPI 完全一致
+        if wasapi_idx is not None:
+            for i, d in enumerate(all_devices):
+                if d['max_input_channels'] > 0 and d['hostapi'] == wasapi_idx and d['name'] == name:
+                    return i
+
+        # 2. WASAPI 正規化一致
+        if wasapi_idx is not None:
+            for i, d in enumerate(all_devices):
+                if d['max_input_channels'] > 0 and d['hostapi'] == wasapi_idx and normalize(d['name']) == name_norm:
+                    return i
+
+        # 3. 任意 API 完全一致（フォールバック）
+        for i, d in enumerate(all_devices):
+            if d['max_input_channels'] > 0 and d['name'] == name:
+                return i
+
+        # 4. 任意 API 正規化一致（フォールバック）
         for i, d in enumerate(all_devices):
             if d['max_input_channels'] > 0 and normalize(d['name']) == name_norm:
                 return i
