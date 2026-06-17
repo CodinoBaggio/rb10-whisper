@@ -3,6 +3,12 @@ import os
 import ctypes
 import traceback
 
+# 開発環境（python.exe で直接起動）でもコンソールウィンドウを隠す
+if not getattr(sys, 'frozen', False):
+    _hwnd = ctypes.windll.kernel32.GetConsoleWindow()
+    if _hwnd:
+        ctypes.windll.user32.ShowWindow(_hwnd, 0)
+
 def log_fatal_error(message):
     with open("fatal_error.log", "w", encoding="utf-8") as f:
         f.write(message)

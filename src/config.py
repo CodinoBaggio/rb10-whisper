@@ -49,7 +49,16 @@ class ConfigManager:
             return cls._config_cache
 
         path = cls._get_config_path()
-        defaults = {"hotkey": "shift"}
+        defaults = {
+            "hotkey": "alt+x",
+            "hotkey_toggle": "alt+z",
+            "backend_type": "local",
+            "whisper_url": "http://localhost:8000/v1",
+            "whisper_model": "Systran/faster-whisper-large-v3",
+            "openai_url": "https://api.openai.com/v1",
+            "docker_container": "",
+            "mic_device": None
+        }
         if not path.exists():
             cls._config_cache = defaults
             return defaults
@@ -80,6 +89,14 @@ class ConfigManager:
             print(f"Config Save Error: {e}")
 
     @classmethod
+    def parse_hotkey(cls, hotkey_str: str) -> tuple[str, str]:
+        """`"ctrl+x"` → `("ctrl", "x")`. `+` がない旧フォーマットは `("", "")` を返す"""
+        if "+" not in hotkey_str:
+            return ("", "")
+        parts = hotkey_str.split("+", 1)
+        return (parts[0].lower(), parts[1].lower())
+
+    @classmethod
     def get_hotkey(cls) -> str:
         """設定からホットキーを取得"""
         config = cls.load_config()
@@ -90,4 +107,93 @@ class ConfigManager:
         """ホットキーを設定に保存"""
         config = cls.load_config()
         config["hotkey"] = hotkey
+        cls.save_config(config)
+
+    @classmethod
+    def get_backend_type(cls) -> str:
+        """バックエンド種別を取得: 'local' または 'openai'"""
+        config = cls.load_config()
+        return config.get("backend_type", "local")
+
+    @classmethod
+    def set_backend_type(cls, backend_type: str) -> None:
+        config = cls.load_config()
+        config["backend_type"] = backend_type
+        cls.save_config(config)
+
+    @classmethod
+    def get_openai_url(cls) -> str:
+        """OpenAI API の URL を取得"""
+        config = cls.load_config()
+        return config.get("openai_url", "https://api.openai.com/v1")
+
+    @classmethod
+    def set_openai_url(cls, url: str) -> None:
+        config = cls.load_config()
+        config["openai_url"] = url
+        cls.save_config(config)
+
+    @classmethod
+    def get_whisper_url(cls) -> str:
+        """文字起こしバックエンドの URL を取得"""
+        config = cls.load_config()
+        return config.get("whisper_url", "http://localhost:8000/v1")
+
+    @classmethod
+    def get_whisper_model(cls) -> str:
+        """使用する Whisper モデル名を取得"""
+        config = cls.load_config()
+        return config.get("whisper_model", "Systran/faster-whisper-large-v3")
+
+    @classmethod
+    def set_whisper_url(cls, url: str) -> None:
+        """文字起こしバックエンドの URL を設定に保存"""
+        config = cls.load_config()
+        config["whisper_url"] = url
+        cls.save_config(config)
+
+    @classmethod
+    def get_hotkey_toggle(cls) -> str:
+        """トグル録音のホットキーを取得"""
+        config = cls.load_config()
+        return config.get("hotkey_toggle", "alt+z")
+
+    @classmethod
+    def set_hotkey_toggle(cls, hotkey: str) -> None:
+        """トグル録音のホットキーを保存"""
+        config = cls.load_config()
+        config["hotkey_toggle"] = hotkey
+        cls.save_config(config)
+
+    @classmethod
+    def set_whisper_model(cls, model: str) -> None:
+        """使用する Whisper モデル名を設定に保存"""
+        config = cls.load_config()
+        config["whisper_model"] = model
+        cls.save_config(config)
+
+    @classmethod
+    def get_docker_container(cls) -> str:
+        """Docker コンテナ名を取得（自動起動用）"""
+        config = cls.load_config()
+        return config.get("docker_container", "")
+
+    @classmethod
+    def set_docker_container(cls, name: str) -> None:
+        """Docker コンテナ名を設定に保存"""
+        config = cls.load_config()
+        config["docker_container"] = name
+        cls.save_config(config)
+
+    @classmethod
+    def get_mic_device(cls) -> str | None:
+        """録音に使用するマイクのデバイス名を取得（None = システムデフォルト）"""
+        config = cls.load_config()
+        return config.get("mic_device", None)
+
+    @classmethod
+    def set_mic_device(cls, name: str | None) -> None:
+        """マイクのデバイス名を設定に保存（None = システムデフォルト）"""
+        config = cls.load_config()
+        config["mic_device"] = name
         cls.save_config(config)
