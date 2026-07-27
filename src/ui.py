@@ -16,7 +16,7 @@ class SettingsWindow:
 
         self.window = tk.Toplevel(root)
         self.window.title("Settings")
-        self.window.geometry("820x780")
+        self.window.geometry("840x1020")
         self.window.resizable(True, True)
         self.window.attributes('-topmost', True)
 
