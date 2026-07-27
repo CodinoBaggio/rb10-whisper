@@ -96,3 +96,46 @@ def test_set_hotkey_toggle_saves_value(tmp_path, monkeypatch):
     ConfigManager.set_hotkey_toggle("ctrl+q")
     ConfigManager._config_cache = None
     assert ConfigManager.get_hotkey_toggle() == "ctrl+q"
+
+
+def test_get_ai_mode_default():
+    ConfigManager._config_cache = None
+    with patch.object(ConfigManager, 'load_config', return_value={}):
+        assert ConfigManager.get_ai_mode() == "off"
+
+
+def test_set_ai_mode_saves_value(tmp_path, monkeypatch):
+    ConfigManager._config_cache = None
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    ConfigManager.set_ai_mode("refine")
+    ConfigManager._config_cache = None
+    assert ConfigManager.get_ai_mode() == "refine"
+
+
+def test_get_ollama_url_default():
+    ConfigManager._config_cache = None
+    with patch.object(ConfigManager, 'load_config', return_value={}):
+        assert ConfigManager.get_ollama_url() == "http://localhost:11434"
+
+
+def test_set_ollama_url_saves_value(tmp_path, monkeypatch):
+    ConfigManager._config_cache = None
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    ConfigManager.set_ollama_url("http://localhost:11435")
+    ConfigManager._config_cache = None
+    assert ConfigManager.get_ollama_url() == "http://localhost:11435"
+
+
+def test_get_ollama_model_default():
+    ConfigManager._config_cache = None
+    with patch.object(ConfigManager, 'load_config', return_value={}):
+        assert ConfigManager.get_ollama_model() == "qwen2.5:7b"
+
+
+def test_set_ollama_model_saves_value(tmp_path, monkeypatch):
+    ConfigManager._config_cache = None
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    ConfigManager.set_ollama_model("gemma3:4b")
+    ConfigManager._config_cache = None
+    assert ConfigManager.get_ollama_model() == "gemma3:4b"
+

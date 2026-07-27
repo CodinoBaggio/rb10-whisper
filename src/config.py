@@ -57,7 +57,10 @@ class ConfigManager:
             "whisper_model": "Systran/faster-whisper-large-v3",
             "openai_url": "https://api.openai.com/v1",
             "docker_container": "",
-            "mic_device": None
+            "mic_device": None,
+            "ai_mode": "off",
+            "ollama_url": "http://localhost:11434",
+            "ollama_model": "qwen2.5:7b"
         }
         if not path.exists():
             cls._config_cache = defaults
@@ -197,3 +200,43 @@ class ConfigManager:
         config = cls.load_config()
         config["mic_device"] = name
         cls.save_config(config)
+
+    @classmethod
+    def get_ai_mode(cls) -> str:
+        """AI整形モードを取得: 'off', 'refine', 'business'"""
+        config = cls.load_config()
+        return config.get("ai_mode", "off")
+
+    @classmethod
+    def set_ai_mode(cls, mode: str) -> None:
+        """AI整形モードを設定に保存"""
+        config = cls.load_config()
+        config["ai_mode"] = mode
+        cls.save_config(config)
+
+    @classmethod
+    def get_ollama_url(cls) -> str:
+        """Ollama API の URL を取得"""
+        config = cls.load_config()
+        return config.get("ollama_url", "http://localhost:11434")
+
+    @classmethod
+    def set_ollama_url(cls, url: str) -> None:
+        """Ollama API の URL を設定に保存"""
+        config = cls.load_config()
+        config["ollama_url"] = url
+        cls.save_config(config)
+
+    @classmethod
+    def get_ollama_model(cls) -> str:
+        """使用する Ollama モデル名を取得"""
+        config = cls.load_config()
+        return config.get("ollama_model", "qwen2.5:7b")
+
+    @classmethod
+    def set_ollama_model(cls, model: str) -> None:
+        """使用する Ollama モデル名を設定に保存"""
+        config = cls.load_config()
+        config["ollama_model"] = model
+        cls.save_config(config)
+

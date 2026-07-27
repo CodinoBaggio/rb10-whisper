@@ -180,23 +180,23 @@ class AudioRecorder:
         # 1. WASAPI 完全一致
         if wasapi_idx is not None:
             for i, d in enumerate(all_devices):
-                if d['max_input_channels'] > 0 and d['hostapi'] == wasapi_idx and d['name'] == name:
+                if d.get('max_input_channels', 0) > 0 and d.get('hostapi') == wasapi_idx and d.get('name') == name:
                     return i
 
         # 2. WASAPI 正規化一致
         if wasapi_idx is not None:
             for i, d in enumerate(all_devices):
-                if d['max_input_channels'] > 0 and d['hostapi'] == wasapi_idx and normalize(d['name']) == name_norm:
+                if d.get('max_input_channels', 0) > 0 and d.get('hostapi') == wasapi_idx and normalize(d.get('name', '')) == name_norm:
                     return i
 
         # 3. 任意 API 完全一致（フォールバック）
         for i, d in enumerate(all_devices):
-            if d['max_input_channels'] > 0 and d['name'] == name:
+            if d.get('max_input_channels', 0) > 0 and d.get('name') == name:
                 return i
 
         # 4. 任意 API 正規化一致（フォールバック）
         for i, d in enumerate(all_devices):
-            if d['max_input_channels'] > 0 and normalize(d['name']) == name_norm:
+            if d.get('max_input_channels', 0) > 0 and normalize(d.get('name', '')) == name_norm:
                 return i
 
         return None

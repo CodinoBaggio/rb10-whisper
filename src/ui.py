@@ -289,6 +289,72 @@ class SettingsWindow:
                                        font=("Helvetica", 9))
         self.lbl_mic_status.pack(side=tk.LEFT, padx=10)
 
+        # ── Separator ──────────────────────────────────────
+        tk.Frame(self.window, bg="#383838", height=1).pack(fill='x', padx=20, pady=2)
+
+        # ── AI Refinement (Ollama) ──────────────────────────
+        arc = tk.Frame(self.window, padx=20, pady=10, bg=bg)
+        arc.pack(fill='x')
+
+        tk.Label(arc, text="AI Text Refinement (Ollama):", bg=bg, fg=fg,
+                 font=("Helvetica", 10, "bold")).pack(anchor='w')
+
+        # Mode Selection
+        mode_frame = tk.Frame(arc, bg=bg)
+        mode_frame.pack(fill='x', pady=(4, 6))
+
+        self.ai_mode_var = tk.StringVar(value=ConfigManager.get_ai_mode())
+
+        modes = [("Off (文字起こしそのまま)", "off"),
+                 ("AI校正 (フィラー除去・修正)", "refine"),
+                 ("ビジネス敬語 (メール・チャット用)", "business")]
+
+        for text, val in modes:
+            tk.Radiobutton(mode_frame, text=text, variable=self.ai_mode_var,
+                           value=val, bg=bg, fg=fg, selectcolor="#444444",
+                           activebackground=bg, activeforeground=fg,
+                           highlightthickness=0).pack(anchor='w', pady=1)
+
+        # Ollama URL & Model
+        ollama_fields = tk.Frame(arc, bg=bg, padx=10)
+        ollama_fields.pack(fill='x', pady=(4, 0))
+
+        tk.Label(ollama_fields, text="Ollama URL:", bg=bg, fg=fg,
+                 font=("Helvetica", 9)).pack(anchor='w')
+        self.ollama_url_var = tk.StringVar(value=ConfigManager.get_ollama_url())
+        self.ollama_url_entry = tk.Entry(
+            ollama_fields, textvariable=self.ollama_url_var,
+            bg="#333333", fg="white", insertbackground="white", relief=tk.FLAT)
+        self.ollama_url_entry.pack(fill='x', ipady=5, pady=(2, 6))
+
+        tk.Label(ollama_fields, text="Ollama Model:", bg=bg, fg=fg,
+                 font=("Helvetica", 9)).pack(anchor='w')
+        self.ollama_model_row = tk.Frame(ollama_fields, bg=bg)
+        self.ollama_model_row.pack(fill='x', pady=(2, 6))
+
+        self.ollama_model_var = tk.StringVar(value=ConfigManager.get_ollama_model())
+        self.ollama_model_widget = tk.Entry(
+            self.ollama_model_row, textvariable=self.ollama_model_var,
+            bg="#333333", fg="white", insertbackground="white", relief=tk.FLAT)
+        self.ollama_model_widget.pack(side=tk.LEFT, fill='x', expand=True, ipady=5)
+
+        self.btn_fetch_ollama_models = tk.Button(
+            self.ollama_model_row, text="Fetch Models", command=self._start_ollama_model_fetch,
+            bg="#444444", fg="white", activebackground="#555555",
+            relief=tk.FLAT, font=("Helvetica", 9), cursor="hand2")
+        self.btn_fetch_ollama_models.pack(side=tk.LEFT, padx=(8, 0))
+
+        # Apply AI Refinement row
+        aai_row = tk.Frame(arc, bg=bg)
+        aai_row.pack(fill='x', pady=(6, 2))
+        tk.Button(aai_row, text="Apply AI Refinement", command=self._apply_ai_refinement,
+                  bg=btn_bg, fg="white", activebackground=btn_active,
+                  relief=tk.FLAT, font=("Helvetica", 10, "bold"),
+                  cursor="hand2").pack(side=tk.LEFT)
+        self.lbl_ai_status = tk.Label(aai_row, text="", bg=bg,
+                                      font=("Helvetica", 9))
+        self.lbl_ai_status.pack(side=tk.LEFT, padx=10)
+
         # ── Close button ────────────────────────────────────
         close_cont = tk.Frame(self.window, padx=20, pady=16, bg=bg)
         close_cont.pack(side=tk.BOTTOM, fill='x')
@@ -473,6 +539,61 @@ class SettingsWindow:
             finally:
                 self.window.after(0, lambda: self._set_cursor(""))
         threading.Thread(target=task, daemon=True).start()
+
+    def _apply_ai_refinement(self):
+        mode  = self.ai_mode_var.get()
+        url   = self.ollama_url_var.get().strip()
+        model = self.ollama_model_var.get().strip()
+
+        if not url:
+            self._show_status(self.lbl_ai_status, "URL is empty.", success=False)
+            return
+        if not model:
+            self._show_status(self.lbl_ai_status, "Model is empty.", success=False)
+            return
+
+        self._set_cursor("watch")
+        def task():
+            try:
+                ConfigManager.set_ai_mode(mode)
+                ConfigManager.set_ollama_url(url)
+                ConfigManager.set_ollama_model(model)
+                self.window.after(0, lambda: self._show_status(
+                    self.lbl_ai_status, f"✓ Saved ({mode.upper()}: {model})"))
+            except Exception as e:
+                self.window.after(0, lambda: self._show_status(
+                    self.lbl_ai_status, f"Error: {e}", success=False))
+            finally:
+                self.window.after(0, lambda: self._set_cursor(""))
+        threading.Thread(target=task, daemon=True).start()
+
+    def _start_ollama_model_fetch(self):
+        url = self.ollama_url_var.get().strip()
+        if not url:
+            return
+        self.btn_fetch_ollama_models.config(state="disabled", text="Fetching...")
+        def task():
+            from src.llm_refiner import LLMRefiner
+            models = LLMRefiner.fetch_available_models(url)
+            self.window.after(0, lambda: self._on_ollama_models_fetched(models))
+        threading.Thread(target=task, daemon=True).start()
+
+    def _on_ollama_models_fetched(self, models: list):
+        if not self.window.winfo_exists():
+            return
+        self.btn_fetch_ollama_models.config(state="normal", text="Fetch Models")
+        if not models:
+            self._show_status(self.lbl_ai_status, "No Ollama models found.", success=False)
+            return
+        current = self.ollama_model_var.get()
+        initial = current if current in models else models[0]
+        self.ollama_model_widget.destroy()
+        self.ollama_model_var.set(initial)
+        self.ollama_model_widget = ttk.Combobox(
+            self.ollama_model_row, textvariable=self.ollama_model_var,
+            values=models, state="readonly")
+        self.ollama_model_widget.pack(side=tk.LEFT, fill='x', expand=True, ipady=3)
+        self._show_status(self.lbl_ai_status, f"✓ Fetched {len(models)} models")
 
     # ──────────────────────────────────────────────────────────
     # モデルフェッチ

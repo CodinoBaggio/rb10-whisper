@@ -1,6 +1,7 @@
 import os
 from openai import OpenAI
 from src.config import ConfigManager
+from src.llm_refiner import LLMRefiner
 import re
 
 class Transcriber:
@@ -39,7 +40,10 @@ class Transcriber:
                     prompt="こんにちは。"
                 )
             text = transcript.text
-            return self._post_process(text)
+            clean_text = self._post_process(text)
+            if not clean_text:
+                return ""
+            return LLMRefiner().refine(clean_text)
         except Exception as e:
             print(f"Transcription Error: {e}")
             return ""
