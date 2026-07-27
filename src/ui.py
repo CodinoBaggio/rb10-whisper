@@ -16,7 +16,7 @@ class SettingsWindow:
 
         self.window = tk.Toplevel(root)
         self.window.title("Settings")
-        self.window.geometry("840x800")
+        self.window.geometry("840x700")
         self.window.resizable(True, True)
         self.window.attributes('-topmost', True)
 
@@ -391,13 +391,6 @@ class SettingsWindow:
         self.lbl_ai_status = tk.Label(aai_row, text="", bg=bg,
                                       font=("Helvetica", 9))
         self.lbl_ai_status.pack(side=tk.LEFT, padx=10)
-
-        # ── Close button ────────────────────────────────────
-        close_cont = tk.Frame(self.window, padx=20, pady=16, bg=bg)
-        close_cont.pack(side=tk.BOTTOM, fill='x')
-        tk.Button(close_cont, text="Close Settings", command=self._on_close_clicked,
-                  bg="#444444", fg="white", activebackground="#555555",
-                  relief=tk.FLAT, font=("Helvetica", 10), cursor="hand2").pack(side=tk.RIGHT)
 
         # 初期状態を適用
         self._on_backend_change()
