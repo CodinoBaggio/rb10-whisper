@@ -11,3 +11,4 @@ pyinstaller
 pystray
 Pillow
 keyring
+requests

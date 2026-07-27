@@ -1,4 +1,5 @@
-import requests
+import urllib.request
+import json
 from src.config import ConfigManager
 
 
@@ -41,18 +42,20 @@ class LLMRefiner:
         }
 
         try:
-            response = requests.post(
+            req_data = json.dumps(payload).encode("utf-8")
+            req = urllib.request.Request(
                 f"{ollama_url}/api/generate",
-                json=payload,
-                timeout=15.0
+                data=req_data,
+                headers={"Content-Type": "application/json"}
             )
-            if response.status_code == 200:
-                data = response.json()
-                refined_text = data.get("response", "").strip()
-                return refined_text if refined_text else text
-            else:
-                print(f"Ollama API Error: status_code={response.status_code}")
-                return text
+            with urllib.request.urlopen(req, timeout=15.0) as response:
+                if response.status == 200:
+                    data = json.loads(response.read().decode("utf-8"))
+                    refined_text = data.get("response", "").strip()
+                    return refined_text if refined_text else text
+                else:
+                    print(f"Ollama API Error: status_code={response.status}")
+                    return text
         except Exception as e:
             print(f"LLM Refine Exception: {e}")
             return text
@@ -62,12 +65,14 @@ class LLMRefiner:
         """Ollama サーバーから利用可能なモデル一覧を取得する"""
         try:
             url = ollama_url.rstrip('/') + "/api/tags"
-            response = requests.get(url, timeout=5.0)
-            if response.status_code == 200:
-                data = response.json()
-                models = [m.get("name") for m in data.get("models", []) if m.get("name")]
-                return models
+            req = urllib.request.Request(url)
+            with urllib.request.urlopen(req, timeout=5.0) as response:
+                if response.status == 200:
+                    data = json.loads(response.read().decode("utf-8"))
+                    models = [m.get("name") for m in data.get("models", []) if m.get("name")]
+                    return models
             return []
         except Exception as e:
             print(f"Fetch Ollama Models Error: {e}")
             return []
+
