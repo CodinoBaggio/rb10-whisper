@@ -16,7 +16,7 @@ class SettingsWindow:
 
         self.window = tk.Toplevel(root)
         self.window.title("Settings")
-        self.window.geometry("840x1020")
+        self.window.geometry("840x800")
         self.window.resizable(True, True)
         self.window.attributes('-topmost', True)
 
@@ -52,8 +52,45 @@ class SettingsWindow:
         self.window.option_add("*TCombobox*Listbox.selectBackground", btn_bg)
         self.window.option_add("*TCombobox*Listbox.selectForeground", "white")
 
+        # ── ボトム固定エリア ──
+        close_cont = tk.Frame(self.window, padx=20, pady=12, bg=bg)
+        close_cont.pack(side=tk.BOTTOM, fill='x')
+        tk.Button(close_cont, text="Close Settings", command=self._on_close_clicked,
+                  bg="#444444", fg="white", activebackground="#555555",
+                  relief=tk.FLAT, font=("Helvetica", 10), cursor="hand2").pack(side=tk.RIGHT)
+
+        # ── スクロールエリア ──
+        container = tk.Frame(self.window, bg=bg)
+        container.pack(side=tk.TOP, fill='both', expand=True)
+
+        canvas = tk.Canvas(container, bg=bg, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(container, orient="vertical", command=canvas.yview)
+        scroll_frame = tk.Frame(canvas, bg=bg)
+
+        scroll_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+
+        canvas_window = canvas.create_window((0, 0), window=scroll_frame, anchor="nw")
+
+        def _on_canvas_configure(event):
+            canvas.itemconfig(canvas_window, width=event.width)
+
+        canvas.bind("<Configure>", _on_canvas_configure)
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        def _on_mousewheel(event):
+            if canvas.winfo_exists():
+                canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+        canvas.bind_all("<MouseWheel>", _on_mousewheel)
+
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
         # ── Backend ──────────────────────────────────────────
-        bc = tk.Frame(self.window, padx=20, pady=12, bg=bg)
+        bc = tk.Frame(scroll_frame, padx=20, pady=12, bg=bg)
         bc.pack(fill='x')
 
         tk.Label(bc, text="Backend:", bg=bg, fg=fg,
@@ -162,10 +199,10 @@ class SettingsWindow:
         self.lbl_backend_status.pack(side=tk.LEFT, padx=10)
 
         # ── Separator ──────────────────────────────────────
-        tk.Frame(self.window, bg="#383838", height=1).pack(fill='x', padx=20, pady=2)
+        tk.Frame(scroll_frame, bg="#383838", height=1).pack(fill='x', padx=20, pady=2)
 
         # ── Hotkey ─────────────────────────────────────────
-        hc = tk.Frame(self.window, padx=20, pady=10, bg=bg)
+        hc = tk.Frame(scroll_frame, padx=20, pady=10, bg=bg)
         hc.pack(fill='x')
 
         tk.Label(hc, text="Recording Hotkey:", bg=bg, fg=fg,
@@ -241,10 +278,10 @@ class SettingsWindow:
         self.lbl_hotkey_status.pack(side=tk.LEFT, padx=10)
 
         # ── Separator ──────────────────────────────────────
-        tk.Frame(self.window, bg="#383838", height=1).pack(fill='x', padx=20, pady=2)
+        tk.Frame(scroll_frame, bg="#383838", height=1).pack(fill='x', padx=20, pady=2)
 
         # ── Microphone ─────────────────────────────────────
-        mc = tk.Frame(self.window, padx=20, pady=10, bg=bg)
+        mc = tk.Frame(scroll_frame, padx=20, pady=10, bg=bg)
         mc.pack(fill='x')
 
         tk.Label(mc, text="Microphone:", bg=bg, fg=fg,
@@ -290,10 +327,10 @@ class SettingsWindow:
         self.lbl_mic_status.pack(side=tk.LEFT, padx=10)
 
         # ── Separator ──────────────────────────────────────
-        tk.Frame(self.window, bg="#383838", height=1).pack(fill='x', padx=20, pady=2)
+        tk.Frame(scroll_frame, bg="#383838", height=1).pack(fill='x', padx=20, pady=2)
 
         # ── AI Refinement (Ollama) ──────────────────────────
-        arc = tk.Frame(self.window, padx=20, pady=10, bg=bg)
+        arc = tk.Frame(scroll_frame, padx=20, pady=10, bg=bg)
         arc.pack(fill='x')
 
         tk.Label(arc, text="AI Text Refinement (Ollama):", bg=bg, fg=fg,
