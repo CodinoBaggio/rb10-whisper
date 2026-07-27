@@ -160,7 +160,7 @@ class AudioInputApp:
 
     def _on_key_event(self, event):
         """全てのキーイベントを監視し、Hold/Toggle コンボを検出する"""
-        if self._capturing:
+        if self._capturing or not event or not event.name:
             return
 
         name = event.name.lower()
