@@ -369,11 +369,14 @@ class SettingsWindow:
         self.ollama_model_row = tk.Frame(ollama_fields, bg=bg)
         self.ollama_model_row.pack(fill='x', pady=(2, 6))
 
-        self.ollama_model_var = tk.StringVar(value=ConfigManager.get_ollama_model())
-        self.ollama_model_widget = tk.Entry(
+        current_ollama_model = ConfigManager.get_ollama_model()
+        initial_models = [current_ollama_model] if current_ollama_model else ["qwen2.5:7b", "gemma3:4b"]
+
+        self.ollama_model_var = tk.StringVar(value=current_ollama_model)
+        self.ollama_model_widget = ttk.Combobox(
             self.ollama_model_row, textvariable=self.ollama_model_var,
-            bg="#333333", fg="white", insertbackground="white", relief=tk.FLAT)
-        self.ollama_model_widget.pack(side=tk.LEFT, fill='x', expand=True, ipady=5)
+            values=initial_models, state="readonly")
+        self.ollama_model_widget.pack(side=tk.LEFT, fill='x', expand=True, ipady=3)
 
         self.btn_fetch_ollama_models = tk.Button(
             self.ollama_model_row, text="Fetch Models", command=self._start_ollama_model_fetch,
@@ -617,15 +620,8 @@ class SettingsWindow:
             return
         current = self.ollama_model_var.get()
         initial = current if current in models else models[0]
-        self.ollama_model_widget.destroy()
-        self.btn_fetch_ollama_models.pack_forget()
-
         self.ollama_model_var.set(initial)
-        self.ollama_model_widget = ttk.Combobox(
-            self.ollama_model_row, textvariable=self.ollama_model_var,
-            values=models, state="readonly")
-        self.ollama_model_widget.pack(side=tk.LEFT, fill='x', expand=True, ipady=3)
-        self.btn_fetch_ollama_models.pack(side=tk.LEFT, padx=(8, 0))
+        self.ollama_model_widget.config(values=models)
         self._show_status(self.lbl_ai_status, f"✓ Fetched {len(models)} models")
 
     # ──────────────────────────────────────────────────────────
