@@ -403,6 +403,11 @@ class SettingsWindow:
                 and self._is_localhost_url(ConfigManager.get_whisper_url())):
             self.window.after(200, lambda: self._start_model_fetch(ConfigManager.get_whisper_url()))
 
+        # Ollama モデル一覧も起動時に自動フェッチ
+        ollama_url = ConfigManager.get_ollama_url().strip()
+        if ollama_url:
+            self.window.after(300, self._start_ollama_model_fetch)
+
     # ──────────────────────────────────────────────────────────
     # Backend 切り替え
     # ──────────────────────────────────────────────────────────
