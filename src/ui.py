@@ -618,11 +618,14 @@ class SettingsWindow:
         current = self.ollama_model_var.get()
         initial = current if current in models else models[0]
         self.ollama_model_widget.destroy()
+        self.btn_fetch_ollama_models.pack_forget()
+
         self.ollama_model_var.set(initial)
         self.ollama_model_widget = ttk.Combobox(
             self.ollama_model_row, textvariable=self.ollama_model_var,
             values=models, state="readonly")
         self.ollama_model_widget.pack(side=tk.LEFT, fill='x', expand=True, ipady=3)
+        self.btn_fetch_ollama_models.pack(side=tk.LEFT, padx=(8, 0))
         self._show_status(self.lbl_ai_status, f"✓ Fetched {len(models)} models")
 
     # ──────────────────────────────────────────────────────────
