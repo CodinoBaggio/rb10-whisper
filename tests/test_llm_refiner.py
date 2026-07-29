@@ -27,7 +27,7 @@ def test_refine_returns_original_text_when_mode_is_off():
 
 def test_refine_calls_ollama_for_refine_mode():
     ConfigManager._config_cache = None
-    mock_ctx = _make_mock_response({"response": "こんにちはテストです。"})
+    mock_ctx = _make_mock_response({"message": {"content": "こんにちはテストです。"}})
 
     with patch.object(ConfigManager, 'get_ai_mode', return_value="refine"), \
          patch.object(ConfigManager, 'get_ollama_url', return_value="http://localhost:11434"), \
@@ -42,7 +42,7 @@ def test_refine_calls_ollama_for_refine_mode():
 
 def test_refine_calls_ollama_for_business_mode():
     ConfigManager._config_cache = None
-    mock_ctx = _make_mock_response({"response": "お世話になっております。テストの件、承知いたしました。"})
+    mock_ctx = _make_mock_response({"message": {"content": "お世話になっております。テストの件、承知いたしました。"}})
 
     with patch.object(ConfigManager, 'get_ai_mode', return_value="business"), \
          patch.object(ConfigManager, 'get_ollama_url', return_value="http://localhost:11434"), \

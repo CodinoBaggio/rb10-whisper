@@ -44,8 +44,12 @@ class LLMRefiner:
 
         payload = {
             "model": ollama_model,
-            "prompt": f"{system_prompt}\n\n入力テキスト:\n{text}",
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": text}
+            ],
             "stream": False,
+            "keep_alive": "1h",
             "options": {
                 "temperature": 0.0
             }
@@ -54,14 +58,15 @@ class LLMRefiner:
         try:
             req_data = json.dumps(payload).encode("utf-8")
             req = urllib.request.Request(
-                f"{ollama_url}/api/generate",
+                f"{ollama_url}/api/chat",
                 data=req_data,
                 headers={"Content-Type": "application/json"}
             )
             with urllib.request.urlopen(req, timeout=15.0) as response:
                 if response.status == 200:
                     data = json.loads(response.read().decode("utf-8"))
-                    refined_text = data.get("response", "").strip()
+                    message = data.get("message", {})
+                    refined_text = message.get("content", "").strip()
                     return refined_text if refined_text else text
                 else:
                     print(f"Ollama API Error: status_code={response.status}")
