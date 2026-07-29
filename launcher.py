@@ -65,14 +65,21 @@ def check_single_instance():
     ERROR_ALREADY_EXISTS = 183
     
     if last_error == ERROR_ALREADY_EXISTS:
-        return False
-    return True
+        if mutex:
+            kernel32.CloseHandle(mutex)
+        return None
+    return mutex
 
 if __name__ == "__main__":
-    if not check_single_instance():
-        root = tk.Tk()
-        root.withdraw()
-        messagebox.showwarning("Warning", "rb10-whisper is already running.")
+    mutex_handle = check_single_instance()
+    if not mutex_handle:
+        print("[launcher] Application is already running.")
+        try:
+            root = tk.Tk()
+            root.withdraw()
+            messagebox.showwarning("Warning", "rb10-whisper is already running.")
+        except Exception:
+            pass
         sys.exit(0)
 
     try:
