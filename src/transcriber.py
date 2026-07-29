@@ -28,7 +28,7 @@ class Transcriber:
         except Exception:
             return False
 
-    def transcribe(self, audio_file_path: str) -> str:
+    def transcribe(self, audio_file_path: str, selected_text: str | None = None) -> str:
         """音声ファイルをテキストに変換する"""
         try:
             client, model = self._make_client()
@@ -43,7 +43,7 @@ class Transcriber:
             clean_text = self._post_process(text)
             if not clean_text:
                 return ""
-            return LLMRefiner().refine(clean_text)
+            return LLMRefiner().refine(clean_text, selected_text)
         except Exception as e:
             print(f"Transcription Error: {e}")
             return ""

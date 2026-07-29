@@ -203,7 +203,7 @@ class ConfigManager:
 
     @classmethod
     def get_ai_mode(cls) -> str:
-        """AI整形モードを取得: 'off', 'refine', 'business'"""
+        """Return the configured AI mode."""
         config = cls.load_config()
         return config.get("ai_mode", "off")
 

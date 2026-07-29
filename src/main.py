@@ -137,6 +137,7 @@ class AudioInputApp:
         self.processing_start_time = 0
         self.last_toggle_time = 0
         self.tray_icon = None
+        self._selected_text_for_current_recording = None
         
         # ホットキー設定
         self._modifier_hold   = ""
@@ -394,8 +395,36 @@ class AudioInputApp:
         else:
             self.stop_and_transcribe()
 
+    def _capture_ai_edit_selection(self) -> str | None:
+        """Capture the active selection for explicit AI editing and restore the clipboard."""
+        if ConfigManager.get_ai_mode() not in ("edit", "business"):
+            return None
+
+        previous_clipboard = None
+        try:
+            previous_clipboard = pyperclip.paste()
+            marker = f"__rb10_selection_{time.time_ns()}__"
+            pyperclip.copy(marker)
+            pyautogui.hotkey("ctrl", "c")
+            time.sleep(0.05)
+            selected_text = pyperclip.paste()
+
+            if not selected_text or selected_text == marker:
+                return None
+            return selected_text.strip() or None
+        except Exception as error:
+            print(f"AI edit selection capture failed: {error}")
+            return None
+        finally:
+            if previous_clipboard is not None:
+                try:
+                    pyperclip.copy(previous_clipboard)
+                except Exception:
+                    pass
+
     def start_recording(self):
         print("Start Recording...")
+        self._selected_text_for_current_recording = self._capture_ai_edit_selection()
         self.is_recording = True
         self.overlay.show()
         
@@ -418,6 +447,8 @@ class AudioInputApp:
         
         # 録音停止・ファイル保存
         audio_path = self.recorder.stop()
+        selected_text = self._selected_text_for_current_recording
+        self._selected_text_for_current_recording = None
         
         # 音量チェック (閾値以下の場合はスキップ)
         # RMS 0.01 はノイズをより確実に弾く設定
@@ -431,16 +462,16 @@ class AudioInputApp:
             return
 
         # 別スレッドで文字起こし実行（UIをフリーズさせないため）
-        threading.Thread(target=self._transcribe_thread, args=(audio_path,)).start()
+        threading.Thread(target=self._transcribe_thread, args=(audio_path, selected_text)).start()
 
-    def _transcribe_thread(self, audio_path):
+    def _transcribe_thread(self, audio_path, selected_text=None):
         if not audio_path:
             self.processing = False
             self.root.after(0, self.overlay.hide)
             return
 
         try:
-            text = self.transcriber.transcribe(audio_path)
+            text = self.transcriber.transcribe(audio_path, selected_text)
             print(f"Transcribed: {text}")
             
             if text:
@@ -472,6 +503,7 @@ class AudioInputApp:
         if self.is_recording:
             print("Cancelled.")
             self.is_recording = False
+            self._selected_text_for_current_recording = None
             audio_path = self.recorder.stop()
             if audio_path and os.path.exists(audio_path):
                 try:

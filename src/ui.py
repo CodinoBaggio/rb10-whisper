@@ -342,9 +342,11 @@ class SettingsWindow:
 
         self.ai_mode_var = tk.StringVar(value=ConfigManager.get_ai_mode())
 
-        modes = [("Off (文字起こしそのまま)", "off"),
-                 ("AI校正 (フィラー除去・修正)", "refine"),
-                 ("ビジネス敬語 (メール・チャット用)", "business")]
+        modes = [
+            ("Off (文字起こしそのまま)", "off"),
+            ("限定AI校正 (フィラー除去・最小限の修正)", "refine"),
+            ("AI編集 (選択テキスト必須)", "edit"),
+        ]
 
         for text, val in modes:
             tk.Radiobutton(mode_frame, text=text, variable=self.ai_mode_var,
