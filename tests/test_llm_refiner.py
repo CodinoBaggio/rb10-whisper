@@ -35,7 +35,7 @@ def test_refine_calls_ollama_for_refine_mode():
          patch('urllib.request.urlopen', return_value=mock_ctx) as mock_urlopen:
         
         refiner = LLMRefiner()
-        result = refiner.refine("こんにちは えーテストです")
+        result = refiner.refine("こんにちは えー テストです")
         assert result == "こんにちはテストです。"
         assert mock_urlopen.called
 
@@ -96,6 +96,218 @@ def test_refine_falls_back_to_transcript_when_llm_output_is_unrelated():
         result = LLMRefiner().refine(original)
 
     assert result == original
+
+
+def test_refine_falls_back_when_question_is_changed_into_an_answer():
+    original = "明日の会議は何時からですか"
+    mock_ctx = _make_mock_response({"message": {"content": "明日の会議は10時からです"}})
+
+    with patch.object(ConfigManager, 'get_ai_mode', return_value="refine"), \
+         patch.object(ConfigManager, 'get_ollama_url', return_value="http://localhost:11434"), \
+         patch.object(ConfigManager, 'get_ollama_model', return_value="qwen2.5:7b"), \
+         patch('urllib.request.urlopen', return_value=mock_ctx):
+        result = LLMRefiner().refine(original)
+
+    assert result == original
+
+
+def test_refine_falls_back_when_request_is_changed_into_execution_declaration():
+    original = "このデータ保存しといて"
+    mock_ctx = _make_mock_response({"message": {"content": "このデータを保存しておきます"}})
+
+    with patch.object(ConfigManager, 'get_ai_mode', return_value="refine"), \
+         patch.object(ConfigManager, 'get_ollama_url', return_value="http://localhost:11434"), \
+         patch.object(ConfigManager, 'get_ollama_model', return_value="qwen2.5:7b"), \
+         patch('urllib.request.urlopen', return_value=mock_ctx):
+        result = LLMRefiner().refine(original)
+
+    assert result == original
+
+
+@pytest.mark.parametrize("candidate", ["明日会議あるよ", "明日会議ある。"])
+def test_refine_falls_back_when_spoken_question_mark_is_changed_into_statement(candidate):
+    original = "明日会議ある？"
+    mock_ctx = _make_mock_response({"message": {"content": candidate}})
+
+    with patch.object(ConfigManager, 'get_ai_mode', return_value="refine"), \
+         patch.object(ConfigManager, 'get_ollama_url', return_value="http://localhost:11434"), \
+         patch.object(ConfigManager, 'get_ollama_model', return_value="qwen2.5:7b"), \
+         patch('urllib.request.urlopen', return_value=mock_ctx):
+        result = LLMRefiner().refine(original)
+
+    assert result == original
+
+
+@pytest.mark.parametrize(
+    ("original", "candidate"),
+    [
+        ("明日の会議資料を確認しておいて", "明日の会議資料を確認しておきます"),
+        ("明日の会議資料を確認お願いします", "明日の会議資料を確認します"),
+    ],
+)
+def test_refine_falls_back_when_request_form_is_changed_into_execution_declaration(original, candidate):
+    mock_ctx = _make_mock_response({"message": {"content": candidate}})
+
+    with patch.object(ConfigManager, 'get_ai_mode', return_value="refine"), \
+         patch.object(ConfigManager, 'get_ollama_url', return_value="http://localhost:11434"), \
+         patch.object(ConfigManager, 'get_ollama_model', return_value="qwen2.5:7b"), \
+         patch('urllib.request.urlopen', return_value=mock_ctx):
+        result = LLMRefiner().refine(original)
+
+    assert result == original
+
+
+def test_refine_falls_back_when_candidate_appends_execution_and_closing_to_long_transcript():
+    original = "明日の会議資料は共有フォルダへ保存したあとに関係者へ連絡する必要があります"
+    candidate = f"{original}。対応します。以上です。"
+    mock_ctx = _make_mock_response({"message": {"content": candidate}})
+
+    with patch.object(ConfigManager, 'get_ai_mode', return_value="refine"), \
+         patch.object(ConfigManager, 'get_ollama_url', return_value="http://localhost:11434"), \
+         patch.object(ConfigManager, 'get_ollama_model', return_value="qwen2.5:7b"), \
+         patch('urllib.request.urlopen', return_value=mock_ctx):
+        result = LLMRefiner().refine(original)
+
+    assert result == original
+
+
+@pytest.mark.parametrize(
+    ("original", "candidate"),
+    [("俺わ行く", "俺は行く"), ("昨日わ", "昨日は")],
+)
+def test_refine_allows_single_particle_correction_in_short_transcript(original, candidate):
+    mock_ctx = _make_mock_response({"message": {"content": candidate}})
+
+    with patch.object(ConfigManager, 'get_ai_mode', return_value="refine"), \
+         patch.object(ConfigManager, 'get_ollama_url', return_value="http://localhost:11434"), \
+         patch.object(ConfigManager, 'get_ollama_model', return_value="qwen2.5:7b"), \
+         patch('urllib.request.urlopen', return_value=mock_ctx):
+        result = LLMRefiner().refine(original)
+
+    assert result == candidate
+
+
+@pytest.mark.parametrize(
+    ("original", "candidate", "expected"),
+    [
+        ("あーちゃんに連絡して", "ちゃんに連絡して", "あーちゃんに連絡して"),
+        ("えーと明日の会議を確認して", "明日の会議を確認して", "明日の会議を確認して"),
+    ],
+)
+def test_refine_removes_only_leading_standalone_fillers(original, candidate, expected):
+    mock_ctx = _make_mock_response({"message": {"content": candidate}})
+
+    with patch.object(ConfigManager, 'get_ai_mode', return_value="refine"), \
+         patch.object(ConfigManager, 'get_ollama_url', return_value="http://localhost:11434"), \
+         patch.object(ConfigManager, 'get_ollama_model', return_value="qwen2.5:7b"), \
+         patch('urllib.request.urlopen', return_value=mock_ctx):
+        result = LLMRefiner().refine(original)
+
+    assert result == expected
+
+
+@pytest.mark.parametrize(
+    ("original", "candidate"),
+    [
+        ("確認して", "確認して。"),
+        ("明日の会議は何時からですか", "明日の会議は何時からですか。"),
+    ],
+)
+def test_limited_correction_allows_terminal_period_without_changing_sentence_form(original, candidate):
+    assert LLMRefiner._is_limited_correction(original, candidate)
+
+
+def test_limited_correction_rejects_internal_content_insertion():
+    original = "明日の会議資料は共有フォルダへ保存したあとに関係者へ連絡する必要があります"
+    candidate = original.replace("共有", "必ず共有")
+
+    assert not LLMRefiner._is_limited_correction(original, candidate)
+
+
+def test_limited_correction_rejects_terminal_content_deletion():
+    original = "明日の会議資料は共有フォルダへ保存したあとに関係者へ連絡する必要があります"
+    candidate = original.removesuffix("ます")
+
+    assert not LLMRefiner._is_limited_correction(original, candidate)
+
+
+def test_limited_correction_does_not_remove_space_delimited_name_as_filler():
+    original = "今日は あーちゃんに連絡して"
+    candidate = "今日は ちゃんに連絡して"
+
+    assert not LLMRefiner._is_limited_correction(original, candidate)
+
+
+def test_limited_correction_rejects_question_answer_after_terminal_period():
+    assert not LLMRefiner._is_limited_correction(
+        "この内容で問題ないですか。", "この内容で問題ないです。"
+    )
+
+
+def test_limited_correction_rejects_request_execution_after_terminal_period():
+    assert not LLMRefiner._is_limited_correction(
+        "会議資料を確認して。", "会議資料を確認します。"
+    )
+
+
+def test_limited_correction_rejects_internal_content_word_replacement():
+    original = "明日の会議資料は共有フォルダへ保存したあとに関係者へ連絡する必要があります"
+    assert not LLMRefiner._is_limited_correction(original, original.replace("明日", "今日"))
+
+
+@pytest.mark.parametrize(("original", "candidate"), [("わに", "はに"), ("おに", "をに")])
+def test_limited_correction_rejects_particle_replacement_at_word_start(original, candidate):
+    assert not LLMRefiner._is_limited_correction(original, candidate)
+
+
+def test_limited_correction_rejects_candidate_side_filler_addition():
+    assert not LLMRefiner._is_limited_correction("明日の会議を確認して", "えーと明日の会議を確認して")
+
+
+def test_limited_correction_rejects_content_word_replacement_for_dictionary_handling():
+    # 内容語の置換はローカル判定で安全に識別できないため、既知語は辞書機能で補正する。
+    assert not LLMRefiner._is_limited_correction("会義です", "会議です")
+
+
+def test_limited_correction_rejects_particle_insertion_without_tokenizer():
+    assert not LLMRefiner._is_limited_correction("俺行く", "俺は行く")
+
+
+def test_limited_correction_rejects_question_loss_in_compound_transcript():
+    assert not LLMRefiner._is_limited_correction(
+        "明日会議ある？念のため確認して", "明日会議ある。念のため確認して"
+    )
+
+
+def test_protected_sentence_forms_include_question_position():
+    assert LLMRefiner._protected_sentence_forms("明日会議ある？資料は共有済み") != LLMRefiner._protected_sentence_forms(
+        "明日会議ある。資料は共有済み？"
+    )
+
+
+def test_limited_correction_rejects_declaration_changed_to_question():
+    assert not LLMRefiner._is_limited_correction("対応します！", "対応します？")
+
+
+def test_limited_correction_rejects_question_loss_before_trailing_filler():
+    assert not LLMRefiner._is_limited_correction("明日会議ある？ えーと", "明日会議ある。")
+
+
+def test_limited_correction_rejects_excessive_exclamation_marks():
+    assert not LLMRefiner._is_limited_correction("やめて。", "やめて！！！")
+
+
+@pytest.mark.parametrize(
+    ("original", "candidate"),
+    [
+        ("株式会社", "株式は会社"),
+        ("かわ", "かは"),
+        ("完了", "完了は"),
+        ("これわいい", "これはいい"),
+    ],
+)
+def test_limited_correction_rejects_particle_edits_without_clear_boundaries(original, candidate):
+    assert not LLMRefiner._is_limited_correction(original, candidate)
 
 
 def test_business_mode_without_selection_does_not_call_ollama():

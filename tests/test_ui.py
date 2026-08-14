@@ -1,5 +1,6 @@
 import os
 import sys
+import tkinter as tk
 from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -205,3 +206,90 @@ def test_nonlocal_url_blur_invalidates_queued_fetch_callback(
     window.window.callbacks.pop()()
 
     assert window.model_var.get() == "manual-entry-model"
+
+
+@patch.object(SettingsWindow, "_on_backend_change")
+@patch.object(SettingsWindow, "_load_dictionary_rows")
+@patch("src.ui.ConfigManager")
+@patch("src.ui.sd.query_devices", return_value=[])
+@patch("src.ui.ttk.Combobox")
+@patch("src.ui.ttk.Scrollbar")
+@patch("src.ui.ttk.Style")
+@patch("src.ui.tk.StringVar")
+@patch("src.ui.tk.Radiobutton")
+@patch("src.ui.tk.Entry")
+@patch("src.ui.tk.Canvas")
+@patch("src.ui.tk.Button")
+@patch("src.ui.tk.Label")
+@patch("src.ui.tk.Frame")
+def test_setup_ui_shows_version_from_definition_in_fixed_bottom_area(
+    mock_frame,
+    mock_label,
+    mock_button,
+    mock_canvas,
+    mock_entry,
+    mock_radiobutton,
+    mock_string_var,
+    mock_style,
+    mock_scrollbar,
+    mock_combobox,
+    mock_query_devices,
+    mock_config_manager,
+    mock_load_dictionary_rows,
+    mock_on_backend_change,
+):
+    """Version must be in the fixed footer and use the imported definition."""
+    window = SettingsWindow.__new__(SettingsWindow)
+    window.window = MagicMock()
+    labels_by_text = {}
+    buttons_by_text = {}
+    frames = []
+    mock_config_manager.get_backend_type.return_value = "openai"
+    mock_config_manager.get_openai_url.return_value = "https://api.example.com/v1"
+    mock_config_manager.load_api_key.return_value = "test-key"
+    mock_config_manager.get_whisper_url.return_value = "http://localhost:8001/v1"
+    mock_config_manager.get_whisper_model.return_value = "test-model"
+    mock_config_manager.get_docker_container.return_value = ""
+    mock_config_manager.get_hotkey.return_value = "alt+x"
+    mock_config_manager.get_hotkey_toggle.return_value = "alt+z"
+    mock_config_manager.parse_hotkey.return_value = ("alt", "x")
+    mock_config_manager.get_mic_device.return_value = ""
+    mock_config_manager.get_ai_mode.return_value = "off"
+    mock_config_manager.get_ollama_model.return_value = ""
+    mock_config_manager.get_ollama_url.return_value = ""
+
+    def create_frame(*args, **kwargs):
+        frame = MagicMock()
+        frames.append((args, frame))
+        return frame
+
+    def create_label(*args, **kwargs):
+        label = MagicMock()
+        labels_by_text[kwargs.get("text")] = (args, label)
+        return label
+
+    def create_button(*args, **kwargs):
+        button = MagicMock()
+        buttons_by_text[kwargs.get("text")] = (args, kwargs, button)
+        return button
+
+    mock_frame.side_effect = create_frame
+    mock_label.side_effect = create_label
+    mock_button.side_effect = create_button
+
+    with patch("src.ui.APP_VERSION", "9.9.9"):
+        window._setup_ui()
+
+    footer_args, footer = frames[0]
+    assert footer_args == (window.window,)
+    footer.pack.assert_called_once_with(side=tk.BOTTOM, fill="x")
+
+    version_label_args, version_label = labels_by_text["Version 9.9.9"]
+    assert version_label_args == (footer,)
+    version_label.pack.assert_called_once_with(side=tk.LEFT)
+
+    close_button_args, close_button_kwargs, close_button = buttons_by_text["Close Settings"]
+    assert close_button_args == (footer,)
+    assert close_button_kwargs["command"].__self__ is window
+    assert close_button_kwargs["command"].__func__ is SettingsWindow._on_close_clicked
+    close_button.pack.assert_called_once_with(side=tk.RIGHT)

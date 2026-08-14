@@ -4,6 +4,7 @@ import webbrowser
 import sounddevice as sd
 from src.config import ConfigManager
 from src.dictionary import Dictionary
+from src.version import APP_VERSION
 import math
 import keyboard
 import threading
@@ -60,6 +61,8 @@ class SettingsWindow:
         # ── ボトム固定エリア ──
         close_cont = tk.Frame(self.window, padx=20, pady=12, bg=bg)
         close_cont.pack(side=tk.BOTTOM, fill='x')
+        tk.Label(close_cont, text=f"Version {APP_VERSION}", bg=bg, fg="#aaaaaa",
+                 font=("Helvetica", 9)).pack(side=tk.LEFT)
         tk.Button(close_cont, text="Close Settings", command=self._on_close_clicked,
                   bg="#444444", fg="white", activebackground="#555555",
                   relief=tk.FLAT, font=("Helvetica", 10), cursor="hand2").pack(side=tk.RIGHT)

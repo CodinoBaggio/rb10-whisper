@@ -1,7 +1,7 @@
 import json
 import re
 import urllib.request
-from collections import Counter
+from difflib import SequenceMatcher
 
 from src.config import ConfigManager
 
@@ -125,25 +125,123 @@ class LLMRefiner:
 
     @staticmethod
     def _is_limited_correction(original_text: str, candidate_text: str) -> bool:
-        """句読点等を除いた文字構成と長さで、限定校正の範囲かを判定する。"""
-        original = re.sub(r"[\s、。,.!?！？]", "", original_text)
-        candidate = re.sub(r"[\s、。,.!?！？]", "", candidate_text)
+        """文型と順序付き文字列の一致で、限定校正の範囲かを判定する。"""
+        # 疑問符は正規化すると消えるため、文型は生テキストから先に判定する。
+        original_form = LLMRefiner._sentence_form(original_text.strip())
+        candidate_form = LLMRefiner._sentence_form(candidate_text.strip())
+        if LLMRefiner._protected_sentence_forms(
+            LLMRefiner._remove_fillers(original_text)
+        ) != LLMRefiner._protected_sentence_forms(candidate_text):
+            return False
+        if LLMRefiner._has_excessive_exclamation(candidate_text):
+            return False
+        original = LLMRefiner._normalize_for_comparison(original_text)
+        candidate = LLMRefiner._normalize_for_comparison(candidate_text)
 
         if not original or not candidate:
+            return False
+
+        # 質問や依頼を回答・実行宣言に変えるのは、文字が一部共通でも校正ではない。
+        if original_form in {"question", "request"} and original_form != candidate_form:
             return False
         if original == candidate:
             return True
 
-        candidate_length = len(candidate)
-        original_length = len(original)
-        if candidate_length < original_length * 0.5 or candidate_length > original_length * 1.8:
+        original_without_fillers = LLMRefiner._normalize_for_comparison(
+            LLMRefiner._remove_fillers(original_text)
+        )
+        # フィラー削除は話者の元発話だけに限定し、候補側の語句はそのまま検証する。
+        if original_without_fillers == candidate:
+            return True
+        if not original_without_fillers:
             return False
 
-        shared_characters = sum((Counter(original) & Counter(candidate)).values())
+        matcher = SequenceMatcher(None, original_without_fillers, candidate, autojunk=False)
+        if LLMRefiner._is_single_particle_correction(matcher):
+            return True
+
+        # 内容語の置換・追加・削除は、ローカル比較だけでは誤字と意味変更を区別できない。
+        # 安全側に倒し、既知の認識誤りはユーザー辞書で扱う。
+        return False
+
+    @staticmethod
+    def _is_single_particle_correction(matcher: SequenceMatcher) -> bool:
+        """音声認識で起きやすい一文字の助詞誤りだけを、短文でも許可する。"""
+        edits = [opcode for opcode in matcher.get_opcodes() if opcode[0] != "equal"]
+        if len(edits) != 1:
+            return False
+
+        tag, i1, i2, j1, j2 = edits[0]
+        if tag != "replace" or i2 - i1 != 1 or j2 - j1 != 1:
+            return False
+
         return (
-            shared_characters / original_length >= 0.6
-            and shared_characters / candidate_length >= 0.6
+            (matcher.a[i1:i2], matcher.b[j1:j2]) in {
+                ("わ", "は"),
+                ("お", "を"),
+                ("え", "へ"),
+            }
+            and LLMRefiner._is_particle_position(matcher.b, j1)
         )
+
+    @staticmethod
+    def _is_particle_position(text: str, index: int) -> bool:
+        """助詞候補の前後が、語境界として安全な文字種かを確認する。"""
+        if index == 0:
+            return False
+        boundary_pattern = r"[一-龯々〆〤ァ-ヶーA-Za-z0-9]"
+        if not re.fullmatch(boundary_pattern, text[index - 1]):
+            return False
+        return index + 1 >= len(text) or bool(re.fullmatch(boundary_pattern, text[index + 1]))
+
+    @staticmethod
+    def _remove_fillers(text: str) -> str:
+        """位置や区切りからフィラーと判別できる語だけを除く。"""
+        text = re.sub(r"^\s*(?:えーっと|えっと|えーと|あーっと)", "", text)
+        return re.sub(
+            r"(^|[\s、。,.!?！？])(?:えーっと|えっと|えーと|あーっと|えー|あー)(?=$|[\s、。,.!?！？])",
+            r"\1",
+            text,
+        )
+
+    @staticmethod
+    def _normalize_for_comparison(text: str) -> str:
+        """句読点と空白を除き、校正前後の内容を比較可能にする。"""
+        return re.sub(r"[\s、。,.!?！？]", "", text)
+
+    @staticmethod
+    def _sentence_form(text: str) -> str:
+        """質問・依頼の文型だけを識別し、話者の発話行為を保護する。"""
+        text = text.rstrip("。！!.")
+        if re.search(r"(?:[?？]|か|かね|かな|だろうか|でしょうか|ですか|ますか)$", text):
+            return "question"
+        if re.search(
+            r"(?:しといて|しておいて|しとけ|してくれ|して|してください|してほしい|"
+            r"やっといて|やって|見て|教えて|頼む|お願い|お願いします|くれ|ください)$",
+            text,
+        ):
+            return "request"
+        if re.search(r"(?:します|しました|しておきます|しておく|いたします|承知しました|対応します)$", text):
+            return "declaration"
+        return "statement"
+
+    @staticmethod
+    def _protected_sentence_forms(text: str) -> tuple[tuple[str, int], ...]:
+        """複文中の質問・依頼と、正規化後の節終端位置を取り出す。"""
+        clauses = re.findall(r"[^。！!?？]+[。！!?？]*", text)
+        normalized_offset = 0
+        protected_forms = []
+        for clause in clauses:
+            normalized_offset += len(LLMRefiner._normalize_for_comparison(clause))
+            sentence_form = LLMRefiner._sentence_form(clause.strip())
+            if sentence_form in {"question", "request"}:
+                protected_forms.append((sentence_form, normalized_offset))
+        return tuple(protected_forms)
+
+    @staticmethod
+    def _has_excessive_exclamation(text: str) -> bool:
+        """限定校正で許可する感嘆符は、最小限の一文字に留める。"""
+        return sum(character in "!！" for character in text) > 1
 
     @classmethod
     def fetch_available_models(cls, ollama_url: str) -> list[str]:
