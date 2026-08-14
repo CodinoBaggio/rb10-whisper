@@ -53,14 +53,15 @@ class ConfigManager:
             "hotkey": "alt+x",
             "hotkey_toggle": "alt+z",
             "backend_type": "local",
-            "whisper_url": "http://localhost:8000/v1",
+            "whisper_url": "http://localhost:8001/v1",
             "whisper_model": "Systran/faster-whisper-large-v3",
             "openai_url": "https://api.openai.com/v1",
             "docker_container": "",
             "mic_device": None,
             "ai_mode": "off",
             "ollama_url": "http://localhost:11434",
-            "ollama_model": "qwen2.5:7b"
+            "ollama_model": "qwen2.5:7b",
+            "dictionary": []
         }
         if not path.exists():
             cls._config_cache = defaults
@@ -140,7 +141,7 @@ class ConfigManager:
     def get_whisper_url(cls) -> str:
         """文字起こしバックエンドの URL を取得"""
         config = cls.load_config()
-        return config.get("whisper_url", "http://localhost:8000/v1")
+        return config.get("whisper_url", "http://localhost:8001/v1")
 
     @classmethod
     def get_whisper_model(cls) -> str:
@@ -238,5 +239,18 @@ class ConfigManager:
         """使用する Ollama モデル名を設定に保存"""
         config = cls.load_config()
         config["ollama_model"] = model
+        cls.save_config(config)
+
+    @classmethod
+    def get_dictionary(cls) -> list[dict]:
+        """音声入力辞書のエントリ一覧を取得"""
+        config = cls.load_config()
+        return list(config.get("dictionary", []))  # 浅いコピーを返す
+
+    @classmethod
+    def set_dictionary(cls, entries: list[dict]) -> None:
+        """音声入力辞書のエントリ一覧を設定に保存"""
+        config = cls.load_config()
+        config["dictionary"] = entries
         cls.save_config(config)
 

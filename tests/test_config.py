@@ -9,7 +9,7 @@ def test_get_whisper_url_returns_default():
     ConfigManager._config_cache = None
     with patch.object(ConfigManager, 'load_config', return_value={}):
         url = ConfigManager.get_whisper_url()
-    assert url == "http://localhost:8000/v1"
+    assert url == "http://localhost:8001/v1"
 
 
 def test_get_whisper_url_returns_custom():
@@ -138,4 +138,45 @@ def test_set_ollama_model_saves_value(tmp_path, monkeypatch):
     ConfigManager.set_ollama_model("gemma3:4b")
     ConfigManager._config_cache = None
     assert ConfigManager.get_ollama_model() == "gemma3:4b"
+
+
+def test_get_dictionary_default_is_empty_list(tmp_path, monkeypatch):
+    ConfigManager._config_cache = None
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    assert ConfigManager.get_dictionary() == []
+
+
+def test_get_dictionary_returns_saved_entries():
+    ConfigManager._config_cache = None
+    entries = [
+        {"term": "Anthropic", "wrong": "あんそろぴっく"},
+        {"term": "東商会", "wrong": ""},
+    ]
+    with patch.object(ConfigManager, 'load_config', return_value={"dictionary": entries}):
+        assert ConfigManager.get_dictionary() == entries
+
+
+def test_set_dictionary_saves_entries(tmp_path, monkeypatch):
+    ConfigManager._config_cache = None
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    entries = [
+        {"term": "Anthropic", "wrong": "あんそろぴっく"},
+        {"term": "Anthropic", "wrong": "アンソロピック"},
+        {"term": "東商会", "wrong": ""},
+    ]
+    ConfigManager.set_dictionary(entries)
+    ConfigManager._config_cache = None
+    assert ConfigManager.get_dictionary() == entries
+
+
+def test_get_dictionary_returns_copy_not_cache_reference(tmp_path, monkeypatch):
+    """戻り値のリストを変更してもキャッシュが汚染されないこと。"""
+    ConfigManager._config_cache = None
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    ConfigManager.set_dictionary([{"term": "Anthropic", "wrong": ""}])
+
+    entries = ConfigManager.get_dictionary()
+    entries.append({"term": "汚染", "wrong": ""})
+
+    assert ConfigManager.get_dictionary() == [{"term": "Anthropic", "wrong": ""}]
 

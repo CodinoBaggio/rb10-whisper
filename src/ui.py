@@ -3,6 +3,7 @@ from tkinter import ttk
 import webbrowser
 import sounddevice as sd
 from src.config import ConfigManager
+from src.dictionary import Dictionary
 import math
 import keyboard
 import threading
@@ -36,6 +37,10 @@ class SettingsWindow:
         fg  = "#ffffff"
         btn_bg     = "#00aa88"
         btn_active = "#00ccaa"
+        self._bg  = bg
+        self._fg  = fg
+        self._btn_bg     = btn_bg
+        self._btn_active = btn_active
 
         self.window.configure(bg=bg)
 
@@ -85,6 +90,7 @@ class SettingsWindow:
                 canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
 
         canvas.bind_all("<MouseWheel>", _on_mousewheel)
+        self._canvas = canvas
 
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
@@ -224,8 +230,10 @@ class SettingsWindow:
         self.hold_modifier_var = tk.StringVar(value=hold_mod.capitalize())
         self.hold_key_var      = tk.StringVar(value=hold_key)
 
-        ttk.Combobox(hold_row, textvariable=self.hold_modifier_var,
-                     values=modifier_options, state="readonly", width=6).pack(side=tk.LEFT)
+        hold_modifier_combo = ttk.Combobox(hold_row, textvariable=self.hold_modifier_var,
+                     values=modifier_options, state="readonly", width=6)
+        hold_modifier_combo.pack(side=tk.LEFT)
+        self._prevent_combobox_wheel_scroll(hold_modifier_combo)
         tk.Label(hold_row, text="+", bg=bg, fg=fg).pack(side=tk.LEFT, padx=4)
         self.hold_key_entry = tk.Entry(
             hold_row, textvariable=self.hold_key_var,
@@ -252,8 +260,10 @@ class SettingsWindow:
         self.toggle_modifier_var = tk.StringVar(value=toggle_mod.capitalize())
         self.toggle_key_var      = tk.StringVar(value=toggle_key)
 
-        ttk.Combobox(toggle_row, textvariable=self.toggle_modifier_var,
-                     values=modifier_options, state="readonly", width=6).pack(side=tk.LEFT)
+        toggle_modifier_combo = ttk.Combobox(toggle_row, textvariable=self.toggle_modifier_var,
+                     values=modifier_options, state="readonly", width=6)
+        toggle_modifier_combo.pack(side=tk.LEFT)
+        self._prevent_combobox_wheel_scroll(toggle_modifier_combo)
         tk.Label(toggle_row, text="+", bg=bg, fg=fg).pack(side=tk.LEFT, padx=4)
         self.toggle_key_entry = tk.Entry(
             toggle_row, textvariable=self.toggle_key_var,
@@ -312,9 +322,10 @@ class SettingsWindow:
         initial_mic  = current_mic if current_mic in input_device_names else system_default
         self.mic_var = tk.StringVar(value=initial_mic)
 
-        ttk.Combobox(mic_row, textvariable=self.mic_var,
-                     values=mic_options, state="readonly").pack(
-            side=tk.LEFT, fill='x', expand=True, ipady=3)
+        mic_combo = ttk.Combobox(mic_row, textvariable=self.mic_var,
+                     values=mic_options, state="readonly")
+        mic_combo.pack(side=tk.LEFT, fill='x', expand=True, ipady=3)
+        self._prevent_combobox_wheel_scroll(mic_combo)
 
         am_row = tk.Frame(mc, bg=bg)
         am_row.pack(fill='x', pady=(6, 2))
@@ -379,6 +390,7 @@ class SettingsWindow:
             self.ollama_model_row, textvariable=self.ollama_model_var,
             values=initial_models, state="readonly")
         self.ollama_model_widget.pack(side=tk.LEFT, fill='x', expand=True, ipady=3)
+        self._prevent_combobox_wheel_scroll(self.ollama_model_widget)
 
         self.btn_fetch_ollama_models = tk.Button(
             self.ollama_model_row, text="Fetch Models", command=self._start_ollama_model_fetch,
@@ -397,6 +409,57 @@ class SettingsWindow:
                                       font=("Helvetica", 9))
         self.lbl_ai_status.pack(side=tk.LEFT, padx=10)
 
+        # ── Separator ──────────────────────────────────────
+        tk.Frame(scroll_frame, bg="#383838", height=1).pack(fill='x', padx=20, pady=2)
+
+        # ── 音声入力辞書 ────────────────────────────────────
+        dc = tk.Frame(scroll_frame, padx=20, pady=10, bg=bg)
+        dc.pack(fill='x')
+
+        dict_head = tk.Frame(dc, bg=bg)
+        dict_head.pack(fill='x')
+        tk.Label(dict_head, text="音声入力辞書:", bg=bg, fg=fg,
+                 font=("Helvetica", 10, "bold")).pack(side=tk.LEFT)
+        tk.Button(dict_head, text="+ 項目を追加", command=self._on_add_dictionary_row,
+                  bg="#444444", fg="white", activebackground="#555555",
+                  relief=tk.FLAT, font=("Helvetica", 9),
+                  cursor="hand2").pack(side=tk.RIGHT)
+
+        tk.Label(dc, text="Whisperに正しく認識させたい固有名詞を登録",
+                 bg=bg, fg="#888888", font=("Helvetica", 9)).pack(anchor='w', pady=(2, 6))
+
+        # 見出し行（各行の grid 列構成に合わせる）
+        dict_header = tk.Frame(dc, bg=bg, padx=10)
+        dict_header.pack(fill='x')
+        dict_header.columnconfigure(0, weight=1, uniform="dict_col")
+        dict_header.columnconfigure(1, weight=1, uniform="dict_col")
+        tk.Label(dict_header, text="正しい表記", bg=bg, fg="#888888",
+                 font=("Helvetica", 9), anchor='w').grid(row=0, column=0, sticky='ew', padx=(0, 6))
+        tk.Label(dict_header, text="誤認識される表記 (任意)", bg=bg, fg="#888888",
+                 font=("Helvetica", 9), anchor='w').grid(row=0, column=1, sticky='ew', padx=(0, 6))
+        tk.Label(dict_header, text="", bg=bg, width=6).grid(row=0, column=2)
+
+        # 行コンテナ（行の追加・削除でここだけが変化する）
+        self.dict_rows_frame = tk.Frame(dc, bg=bg, padx=10)
+        self.dict_rows_frame.pack(fill='x', pady=(2, 0))
+        self.dict_rows = []
+
+        self.lbl_dict_counter = tk.Label(dc, text="", bg=bg, fg="#888888",
+                                         font=("Helvetica", 9))
+        self.lbl_dict_counter.pack(anchor='w', pady=(6, 0))
+
+        ad_row = tk.Frame(dc, bg=bg)
+        ad_row.pack(fill='x', pady=(6, 2))
+        tk.Button(ad_row, text="Apply Dictionary", command=self._apply_dictionary,
+                  bg=btn_bg, fg="white", activebackground=btn_active,
+                  relief=tk.FLAT, font=("Helvetica", 10, "bold"),
+                  cursor="hand2").pack(side=tk.LEFT)
+        self.lbl_dict_status = tk.Label(ad_row, text="", bg=bg,
+                                        font=("Helvetica", 9))
+        self.lbl_dict_status.pack(side=tk.LEFT, padx=10)
+
+        self._load_dictionary_rows()
+
         # 初期状態を適用
         self._on_backend_change()
 
@@ -409,6 +472,18 @@ class SettingsWindow:
         ollama_url = ConfigManager.get_ollama_url().strip()
         if ollama_url:
             self.window.after(300, self._start_ollama_model_fetch)
+
+    # ──────────────────────────────────────────────────────────
+    # Combobox ホイールスクロール対策
+    # ──────────────────────────────────────────────────────────
+
+    def _prevent_combobox_wheel_scroll(self, combobox) -> None:
+        """Combobox上でのマウスホイールが値を変更しないようにし、代わりに設定ウィンドウ全体をスクロールさせる。"""
+        def _on_wheel(event):
+            if hasattr(self, "_canvas") and self._canvas.winfo_exists():
+                self._canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+            return "break"
+        combobox.bind("<MouseWheel>", _on_wheel)
 
     # ──────────────────────────────────────────────────────────
     # Backend 切り替え
@@ -632,6 +707,159 @@ class SettingsWindow:
         self._show_status(self.lbl_ai_status, f"✓ Fetched {len(models)} models")
 
     # ──────────────────────────────────────────────────────────
+    # 音声入力辞書
+    # ──────────────────────────────────────────────────────────
+
+    def _load_dictionary_rows(self) -> None:
+        """ConfigManager から辞書エントリを読み込み、行を並べる。0件なら空行を1つ出す。"""
+        for widget in self.dict_rows_frame.winfo_children():
+            widget.destroy()
+        self.dict_rows = []
+
+        entries = ConfigManager.get_dictionary()
+        if not entries:
+            self._add_dictionary_row("", "")
+        else:
+            for entry in entries:
+                self._add_dictionary_row(entry.get("term", ""), entry.get("wrong", ""))
+
+        self._update_dictionary_counter()
+
+    def _add_dictionary_row(self, term: str = "", wrong: str = "") -> dict:
+        """辞書1行分のウィジェットを作り、self.dict_rows に登録する。"""
+        row_frame = tk.Frame(self.dict_rows_frame, bg=self._bg)
+        row_frame.pack(fill='x', pady=2)
+        row_frame.columnconfigure(0, weight=1, uniform="dict_col")
+        row_frame.columnconfigure(1, weight=1, uniform="dict_col")
+
+        term_var  = tk.StringVar(value=term)
+        wrong_var = tk.StringVar(value=wrong)
+
+        term_entry = tk.Entry(
+            row_frame, textvariable=term_var,
+            bg="#333333", fg="white", insertbackground="white", relief=tk.FLAT)
+        term_entry.grid(row=0, column=0, sticky='ew', padx=(0, 6), ipady=5)
+
+        wrong_entry = tk.Entry(
+            row_frame, textvariable=wrong_var,
+            bg="#333333", fg="white", insertbackground="white", relief=tk.FLAT)
+        wrong_entry.grid(row=0, column=1, sticky='ew', padx=(0, 6), ipady=5)
+
+        row_data = {
+            "frame": row_frame,
+            "term_var": term_var,
+            "wrong_var": wrong_var,
+        }
+
+        delete_btn = tk.Button(
+            row_frame, text="削除", command=lambda: self._on_remove_dictionary_row(row_data),
+            bg="#444444", fg="white", activebackground="#555555",
+            relief=tk.FLAT, font=("Helvetica", 9), cursor="hand2")
+        delete_btn.grid(row=0, column=2, padx=(0, 0))
+        row_data["delete_btn"] = delete_btn
+
+        term_var.trace_add("write", lambda *_: self._update_dictionary_counter())
+        wrong_var.trace_add("write", lambda *_: self._update_dictionary_counter())
+
+        self.dict_rows.append(row_data)
+        return row_data
+
+    def _on_add_dictionary_row(self) -> None:
+        """[+ 項目を追加] ボタン: 末尾に空行を追加する。"""
+        self._add_dictionary_row("", "")
+        self._update_dictionary_counter()
+
+    def _on_remove_dictionary_row(self, row_data: dict) -> None:
+        """[削除] ボタン: その行を削除する。全部消えたら空行を1つ残す。"""
+        if row_data in self.dict_rows:
+            self.dict_rows.remove(row_data)
+        if row_data["frame"].winfo_exists():
+            row_data["frame"].destroy()
+
+        if not self.dict_rows:
+            self._add_dictionary_row("", "")
+
+        self._update_dictionary_counter()
+
+    def _collect_dictionary_entries(self) -> list:
+        """現在の行ウィジェットから {"term", "wrong"} のリストを取得する（未加工）。"""
+        entries = []
+        for row_data in self.dict_rows:
+            if not row_data["frame"].winfo_exists():
+                continue
+            entries.append({
+                "term": row_data["term_var"].get(),
+                "wrong": row_data["wrong_var"].get(),
+            })
+        return entries
+
+    def _update_dictionary_counter(self) -> None:
+        """現在の入力内容から prompt suffix の長さを計算し、カウンタ表示を更新する。"""
+        if not self.lbl_dict_counter.winfo_exists():
+            return
+        entries = self._collect_dictionary_entries()
+        info = Dictionary.prompt_overflow_info(entries)
+        max_chars = Dictionary.MAX_PROMPT_CHARS
+
+        if info["truncated"]:
+            dropped = info["total_count"] - info["kept_count"]
+            text = f"プロンプト長: {info['raw_length']} / {max_chars} 文字（{dropped}語が除外されます）"
+            color = "#ff6666"
+        else:
+            text = f"プロンプト長: {info['raw_length']} / {max_chars} 文字"
+            color = "#888888"
+
+        self.lbl_dict_counter.config(text=text, fg=color)
+
+    def _apply_dictionary(self) -> None:
+        """Apply Dictionary ボタン: term が空の行を除外して保存する。除外・フィラー衝突は警告する。"""
+        raw_entries = self._collect_dictionary_entries()
+        entries = []
+        blank_term_count = 0
+        for entry in raw_entries:
+            term  = entry["term"].strip()
+            wrong = entry["wrong"].strip()
+            if not term:
+                blank_term_count += 1
+                continue
+            entries.append({"term": term, "wrong": wrong})
+
+        filler_hits = [
+            e["wrong"] for e in entries
+            if e["wrong"] and any(filler in e["wrong"] for filler in Dictionary.FILLER_PATTERNS)
+        ]
+
+        self._set_cursor("watch")
+
+        def task():
+            try:
+                ConfigManager.set_dictionary(entries)
+
+                warnings = []
+                if blank_term_count:
+                    warnings.append(f"「正しい表記」が空の{blank_term_count}行は保存されません")
+                if filler_hits:
+                    if len(filler_hits) == 1:
+                        warnings.append(f"「{filler_hits[0]}」はフィラー除去と衝突し置換されません")
+                    else:
+                        warnings.append(f"{len(filler_hits)}件がフィラー除去と衝突し置換されません")
+
+                def finish():
+                    self._load_dictionary_rows()  # 実際に保存された内容で再描画
+                    if warnings:
+                        self._show_status(self.lbl_dict_status, "⚠ 保存したが: " + " / ".join(warnings), success=False)
+                    else:
+                        self._show_status(self.lbl_dict_status, "✓ Saved")
+
+                self.window.after(0, finish)
+            except Exception as exc:
+                self.window.after(0, lambda: self._show_status(
+                    self.lbl_dict_status, f"Error: {exc}", success=False))
+            finally:
+                self.window.after(0, lambda: self._set_cursor(""))
+        threading.Thread(target=task, daemon=True).start()
+
+    # ──────────────────────────────────────────────────────────
     # モデルフェッチ
     # ──────────────────────────────────────────────────────────
 
@@ -650,14 +878,17 @@ class SettingsWindow:
     def _start_model_fetch(self, url: str) -> None:
         self._fetch_serial = getattr(self, '_fetch_serial', 0) + 1
         serial = self._fetch_serial
-        self._prefetch_model_value = self.model_var.get()
+        current = self.model_var.get()
+        if current != "Fetching...":
+            self._prefetch_model_value = current
+        prefetched_model = self._prefetch_model_value
         self.model_var.set("Fetching...")
         self.model_widget.config(state="disabled")
         threading.Thread(
-            target=self._fetch_models_async, args=(url, serial), daemon=True
+            target=self._fetch_models_async, args=(url, serial, prefetched_model), daemon=True
         ).start()
 
-    def _fetch_models_async(self, url: str, serial: int) -> None:
+    def _fetch_models_async(self, url: str, serial: int, prefetched_model: str) -> None:
         import urllib.request
         import json as _json
         models_url = url.rstrip("/") + "/models"
@@ -666,30 +897,54 @@ class SettingsWindow:
                 data = _json.loads(resp.read().decode())
             models = [item["id"] for item in data.get("data", [])]
             if models and serial == self._fetch_serial:
-                self.window.after(0, lambda: self._switch_to_model_combo(models))
+                self.window.after(
+                    0,
+                    lambda: self._switch_to_model_combo(models, serial, prefetched_model),
+                )
                 return
         except Exception:
             pass
         if serial == self._fetch_serial:
-            restore = getattr(self, '_prefetch_model_value', ConfigManager.get_whisper_model())
-            self.window.after(0, lambda: self._switch_to_model_entry(restore))
+            self.window.after(
+                0,
+                lambda: self._switch_to_model_entry(prefetched_model, serial),
+            )
 
-    def _switch_to_model_combo(self, models: list) -> None:
+    def _switch_to_model_combo(
+        self, models: list, serial: int | None = None, prefetched_model: str | None = None
+    ) -> None:
+        if serial is not None and serial != self._fetch_serial:
+            return
         if not self.window.winfo_exists():
             return
         current = self.model_var.get()
-        initial = current if current in models else models[0]
+        prefetched = (
+            prefetched_model if serial is not None
+            else getattr(self, '_prefetch_model_value', None)
+        )
+        initial = (
+            current if current in models else
+            prefetched if prefetched in models else
+            models[0]
+        )
         self.model_widget.destroy()
         self.model_var.set(initial)
         self.model_widget = ttk.Combobox(
             self.model_row, textvariable=self.model_var,
             values=models, state="readonly")
         self.model_widget.pack(side=tk.LEFT, fill='x', expand=True, ipady=3)
+        self._prevent_combobox_wheel_scroll(self.model_widget)
         # Local が無効なら Combobox も無効にする
         if self.backend_var.get() != "local":
             self.model_widget.config(state="disabled")
 
-    def _switch_to_model_entry(self, restore_value: str | None = None) -> None:
+    def _switch_to_model_entry(
+        self, restore_value: str | None = None, serial: int | None = None
+    ) -> None:
+        if serial is not None and serial != self._fetch_serial:
+            return
+        if serial is None:
+            self._fetch_serial = getattr(self, '_fetch_serial', 0) + 1
         if not self.window.winfo_exists():
             return
         current = self.model_var.get()

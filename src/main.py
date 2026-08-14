@@ -316,7 +316,7 @@ class AudioInputApp:
         tkinter.messagebox.showwarning(
             "接続エラー",
             "speaches サーバーに接続できません。\n"
-            "Docker で whisper-server を起動してください。\n\n"
+            "Docker で whisper-transcription-api を起動してください。\n\n"
             "アプリは起動しますが、文字起こしは動作しません。"
         )
 

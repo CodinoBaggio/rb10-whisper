@@ -2,6 +2,7 @@ import os
 from openai import OpenAI
 from src.config import ConfigManager
 from src.llm_refiner import LLMRefiner
+from src.dictionary import Dictionary
 import re
 
 class Transcriber:
@@ -32,17 +33,24 @@ class Transcriber:
         """音声ファイルをテキストに変換する"""
         try:
             client, model = self._make_client()
+            entries = ConfigManager.get_dictionary()
+
+            # 登録語を prompt の末尾へ（Whisper は末尾ほど影響が強い）
+            prompt = "こんにちは。" + Dictionary.build_prompt_suffix(entries)
+
             with open(audio_file_path, "rb") as audio_file:
                 transcript = client.audio.transcriptions.create(
                     model=model,
                     file=audio_file,
                     language="ja",
-                    prompt="こんにちは。"
+                    prompt=prompt
                 )
             text = transcript.text
             clean_text = self._post_process(text)
             if not clean_text:
                 return ""
+
+            clean_text = Dictionary.apply_replacements(clean_text, entries)
             return LLMRefiner().refine(clean_text, selected_text)
         except Exception as e:
             print(f"Transcription Error: {e}")
@@ -72,7 +80,7 @@ class Transcriber:
                 return ""
             text = re.sub(phrase, "", text)
 
-        fillers = [r"えー", r"あー", r"うーん", r"えっと"]
+        fillers = Dictionary.FILLER_PATTERNS
         for filler in fillers:
             text = re.sub(filler, "", text)
 
