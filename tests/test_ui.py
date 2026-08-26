@@ -1,11 +1,13 @@
 import os
 import sys
 import tkinter as tk
+import pytest
 from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from src.ui import SettingsWindow
+import src.ui as ui
+from src.ui import OverlayWindow, SettingsWindow
 
 
 class _Value:
@@ -80,6 +82,121 @@ def _models_response(models):
         ('{"data": ' + str([{"id": model} for model in models]).replace("'", '"') + '}').encode()
     )
     return response
+
+
+def _user32_mock(mock_windll):
+    user32 = mock_windll.user32
+    user32.GetCursorPos.return_value = 1
+    user32.MonitorFromPoint.return_value = 1
+    user32.GetMonitorInfoW.return_value = 1
+    return user32
+
+
+@patch("src.ui.ctypes.windll")
+def test_get_cursor_monitor_rect_returns_rc_monitor_and_uses_nearest_flag(mock_windll):
+    user32 = _user32_mock(mock_windll)
+
+    def fill_monitor_info(monitor, monitor_info_ptr):
+        monitor_info = monitor_info_ptr._obj
+        monitor_info.rcMonitor.left = -2560
+        monitor_info.rcMonitor.top = 0
+        monitor_info.rcMonitor.right = 0
+        monitor_info.rcMonitor.bottom = 1440
+        monitor_info.rcWork.left = -2500
+        monitor_info.rcWork.top = 10
+        monitor_info.rcWork.right = -10
+        monitor_info.rcWork.bottom = 1392
+        return 1
+
+    user32.GetMonitorInfoW.side_effect = fill_monitor_info
+
+    monitor_rect = ui.get_cursor_monitor_rect()
+
+    assert monitor_rect == (-2560, 0, 0, 1440)
+    assert user32.MonitorFromPoint.call_args.args[1] == 2
+
+
+@patch("src.ui.ctypes.windll")
+def test_get_cursor_monitor_rect_raises_when_get_cursor_pos_returns_zero(mock_windll):
+    user32 = _user32_mock(mock_windll)
+    user32.GetCursorPos.return_value = 0
+
+    with pytest.raises(OSError, match="GetCursorPos failed"):
+        ui.get_cursor_monitor_rect()
+
+
+@patch("src.ui.ctypes.windll")
+def test_get_cursor_monitor_rect_raises_when_monitor_from_point_returns_zero(mock_windll):
+    user32 = _user32_mock(mock_windll)
+    user32.MonitorFromPoint.return_value = 0
+
+    with pytest.raises(OSError, match="MonitorFromPoint failed"):
+        ui.get_cursor_monitor_rect()
+
+
+@patch("src.ui.ctypes.windll")
+def test_get_cursor_monitor_rect_raises_when_get_monitor_info_returns_zero(mock_windll):
+    user32 = _user32_mock(mock_windll)
+    user32.GetMonitorInfoW.return_value = 0
+
+    with pytest.raises(OSError, match="GetMonitorInfoW failed"):
+        ui.get_cursor_monitor_rect()
+
+
+def test_calc_overlay_position_keeps_primary_monitor_position():
+    position = ui.calc_overlay_position((0, 0, 2560, 1440), 320, 80, 120)
+
+    assert position == (1120, 1240)
+
+
+def test_calc_overlay_position_handles_negative_coordinate_monitor():
+    position = ui.calc_overlay_position((-2560, 0, 0, 1440), 320, 80, 120)
+
+    assert position == (-1440, 1240)
+
+
+def test_calc_overlay_position_centers_and_keeps_bottom_offset_on_different_resolution():
+    position = ui.calc_overlay_position((2560, 200, 4480, 1280), 320, 80, 120)
+
+    assert position == (3360, 1080)
+
+
+@patch("src.ui.get_cursor_monitor_rect", return_value=(-2560, 0, 0, 1440))
+def test_reposition_for_cursor_uses_cursor_monitor_rect(mock_monitor_rect):
+    overlay = OverlayWindow.__new__(OverlayWindow)
+    overlay.window = MagicMock()
+
+    overlay._reposition_for_cursor()
+
+    overlay.window.geometry.assert_called_once_with("320x80+-1440+1240")
+
+
+@patch("src.ui.get_cursor_monitor_rect", side_effect=OSError("Win32 failed"))
+def test_reposition_for_cursor_falls_back_to_primary_screen(mock_monitor_rect):
+    overlay = OverlayWindow.__new__(OverlayWindow)
+    overlay.window = MagicMock()
+    overlay.window.winfo_screenwidth.return_value = 2560
+    overlay.window.winfo_screenheight.return_value = 1440
+
+    overlay._reposition_for_cursor()
+
+    overlay.window.geometry.assert_called_once_with("320x80+1120+1240")
+
+
+def test_show_repositions_overlay_before_deiconify():
+    overlay = OverlayWindow.__new__(OverlayWindow)
+    call_order = []
+    overlay.window = MagicMock()
+    overlay.window.deiconify.side_effect = lambda: call_order.append("deiconify")
+    overlay.canvas = MagicMock()
+    overlay.bars = []
+    overlay.rec_colors = []
+    overlay._reposition_for_cursor = lambda: call_order.append("reposition")
+    overlay._draw_frame = MagicMock()
+
+    overlay.show()
+
+    assert call_order == ["reposition", "deiconify"]
 
 
 @patch("src.ui.ttk.Combobox", return_value=_Widget())
