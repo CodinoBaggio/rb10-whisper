@@ -8,6 +8,52 @@ from src.version import APP_VERSION
 import math
 import keyboard
 import threading
+import ctypes
+from ctypes import wintypes
+
+
+class _MONITORINFO(ctypes.Structure):
+    _fields_ = [
+        ("cbSize", wintypes.DWORD),
+        ("rcMonitor", wintypes.RECT),
+        ("rcWork", wintypes.RECT),
+        ("dwFlags", wintypes.DWORD),
+    ]
+
+
+def calc_overlay_position(monitor_rect, overlay_width, overlay_height, bottom_offset):
+    left, top, right, bottom = monitor_rect
+    monitor_width = right - left
+    monitor_height = bottom - top
+    x = left + (monitor_width - overlay_width) // 2
+    y = top + monitor_height - overlay_height - bottom_offset
+    return x, y
+
+
+def get_cursor_monitor_rect():
+    user32 = ctypes.windll.user32
+    user32.GetCursorPos.argtypes = [ctypes.POINTER(wintypes.POINT)]
+    user32.GetCursorPos.restype = wintypes.BOOL
+    user32.MonitorFromPoint.argtypes = [wintypes.POINT, wintypes.DWORD]
+    user32.MonitorFromPoint.restype = ctypes.c_void_p
+    user32.GetMonitorInfoW.argtypes = [ctypes.c_void_p, ctypes.POINTER(_MONITORINFO)]
+    user32.GetMonitorInfoW.restype = wintypes.BOOL
+
+    point = wintypes.POINT()
+    if not user32.GetCursorPos(ctypes.byref(point)):
+        raise OSError("GetCursorPos failed")
+
+    monitor = user32.MonitorFromPoint(point, 2)
+    if not monitor:
+        raise OSError("MonitorFromPoint failed")
+
+    monitor_info = _MONITORINFO()
+    monitor_info.cbSize = ctypes.sizeof(_MONITORINFO)
+    if not user32.GetMonitorInfoW(monitor, ctypes.byref(monitor_info)):
+        raise OSError("GetMonitorInfoW failed")
+
+    rect = monitor_info.rcMonitor
+    return rect.left, rect.top, rect.right, rect.bottom
 
 class SettingsWindow:
     """設定ウィンドウ"""
@@ -1153,9 +1199,23 @@ class OverlayWindow:
         for i, bar in enumerate(self.bars):
             self.canvas.itemconfig(bar, fill=self.rec_colors[i])
         self.canvas.update_idletasks()
+        self._reposition_for_cursor()
         self.window.deiconify()
         self.is_visible = True
         self._draw_frame()
+
+    def _reposition_for_cursor(self):
+        width, height = 320, 80
+        try:
+            x, y = calc_overlay_position(
+                get_cursor_monitor_rect(), width, height, 120
+            )
+        except Exception:
+            screen_width = self.window.winfo_screenwidth()
+            screen_height = self.window.winfo_screenheight()
+            x = (screen_width - width) // 2
+            y = screen_height - height - 120
+        self.window.geometry(f"{width}x{height}+{x}+{y}")
 
     def hide(self):
         self.is_thinking = False
